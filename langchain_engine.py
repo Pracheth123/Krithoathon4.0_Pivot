@@ -34,6 +34,8 @@ class EvaluationPayload(BaseModel):
     keyword_score_15: float = Field(description="Score out of 15 for keywords")
     total_score: float = Field(description="Total score (sum of the above)")
     xai_explanation: str = Field(description="A highly concise, natural-language Explainable AI summary justifying the score")
+    extracted_candidate_skills: List[str] = Field(description="List of strict technical hard skills extracted from the candidate's resume (e.g. Python, AWS). No generic buzzwords.")
+    extracted_jd_skills: List[str] = Field(description="List of strict technical hard skills extracted from the job description (e.g. React, Docker). No generic buzzwords.")
 
 def embed_document(candidate_id: str, text: str, metadata: Dict[str, Any] = None) -> None:
     """
@@ -131,6 +133,8 @@ SCORING RULES (You MUST assign a number > 0 for matching skills):
 4. keyword_score_15: Score up to 15 based on keyword matches.
 5. total_score: Sum of the above 4 scores.
 6. xai_explanation: You MUST write a 2-sentence explanation of why you gave these scores. DO NOT LEAVE BLANK.
+7. extracted_candidate_skills: Extract a list of STRICT technical hard skills (e.g., Python, AWS, React) from the candidate's resume. Do NOT include generic buzzwords (e.g., "Leadership", "Agile").
+8. extracted_jd_skills: Extract a list of STRICT technical hard skills from the job description. Do NOT include generic buzzwords.
 
 Return the evaluation in this exact JSON format:
 {format_instructions}

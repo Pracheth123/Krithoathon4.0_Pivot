@@ -155,12 +155,42 @@ async def embed_store(request: EmbedStoreRequest):
 @app.post("/evaluate-candidate")
 async def evaluate_candidate_endpoint(request: EvaluateRequest):
     """
-    Queries ChromaDB for a candidate and runs LLM-as-a-Judge scoring.
+    Queries ChromaDB for a candidate, runs LLM-as-a-Judge scoring, and unifies 
+    the result with CSGT graph generation and gap analysis.
     """
     try:
-        # Run blocking LLM and ChromaDB queries in a separate thread
-        results = await asyncio.to_thread(evaluate_candidate, request.candidate_id, request.job_description, request.pow_data or {})
-        return results
+        # 1. Run blocking LLM evaluation
+        llm_evaluation = await asyncio.to_thread(
+            evaluate_candidate, 
+            request.candidate_id, 
+            request.job_description, 
+            request.pow_data or {}
+        )
+        
+        # 2. Extract skills
+        candidate_skills = llm_evaluation.get("extracted_candidate_skills", [])
+        jd_skills = llm_evaluation.get("extracted_jd_skills", [])
+        
+        # 3. Generate Graph and Gap Analysis from graph_engine.py
+        graph_data = generate_knowledge_graph(candidate_skills, jd_skills)
+        gap_analysis = calculate_gap_analysis(candidate_skills, jd_skills)
+        
+        # 4. Build the unified JSON payload
+        unified_response = {
+            "candidate_id": request.candidate_id,
+            "scores": {
+                "semantic_skill_score_40": llm_evaluation.get("semantic_skill_score_40"),
+                "pow_depth_score_30": llm_evaluation.get("pow_depth_score_30"),
+                "experience_score_15": llm_evaluation.get("experience_score_15"),
+                "keyword_score_15": llm_evaluation.get("keyword_score_15"),
+                "total_score": llm_evaluation.get("total_score")
+            },
+            "explanation": llm_evaluation.get("xai_explanation"),
+            "gap_analysis": gap_analysis,
+            "graph_data": graph_data
+        }
+        
+        return unified_response
     except ValueError as ve:
         raise HTTPException(status_code=404, detail=str(ve))
     except Exception as e:
