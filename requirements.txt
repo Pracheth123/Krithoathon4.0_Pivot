@@ -4,3 +4,7 @@ python-multipart
 PyPDF2
 spacy
 httpx
+langchain
+langchain-huggingface
+langchain-openai
+chromadb
