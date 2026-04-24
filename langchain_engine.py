@@ -37,6 +37,9 @@ class EvaluationPayload(BaseModel):
     extracted_candidate_skills: List[str] = Field(description="List of strict technical hard skills extracted from the candidate's resume (e.g. Python, AWS). No generic buzzwords.")
     extracted_jd_skills: List[str] = Field(description="List of strict technical hard skills extracted from the job description (e.g. React, Docker). No generic buzzwords.")
 
+class CommitEvaluationPayload(BaseModel):
+    quality_multiplier: float = Field(description="Decimal from 0.0 to 1.0 representing commit quality.")
+
 def embed_document(candidate_id: str, text: str, metadata: Dict[str, Any] = None) -> None:
     """
     Chunks the given text using RecursiveCharacterTextSplitter and upserts
@@ -132,7 +135,7 @@ SCORING RULES (You MUST assign a number > 0 for matching skills):
 3. experience_score_15: Score up to 15 based on their years of experience and project complexity.
 4. keyword_score_15: Score up to 15 based on keyword matches.
 5. total_score: Sum of the above 4 scores.
-6. xai_explanation: You MUST write a 2-sentence explanation of why you gave these scores. DO NOT LEAVE BLANK.
+6. xai_explanation: You MUST write a 2-sentence explanation of why you gave these scores. DO NOT LEAVE BLANK. Mention the candidate's recent commit activity or 'burst' status in the xai_explanation if relevant to their current skill momentum.
 7. extracted_candidate_skills: Extract a list of STRICT technical hard skills (e.g., Python, AWS, React) from the candidate's resume. Do NOT include generic buzzwords (e.g., "Leadership", "Agile").
 8. extracted_jd_skills: Extract a list of STRICT technical hard skills from the job description. Do NOT include generic buzzwords.
 
@@ -156,3 +159,46 @@ Return the evaluation in this exact JSON format:
     except Exception as e:
         logger.error(f"Error evaluating candidate {candidate_id}: {e}")
         raise RuntimeError(f"Evaluation failed due to LLM error: {str(e)}")
+
+def evaluate_commit_semantics(commit_messages: List[str]) -> float:
+    """
+    Evaluates the quality of a list of commit messages using an LLM.
+    Penalizes vague messages and rewards descriptive ones.
+    Returns a float between 0.0 and 1.0 as a quality multiplier.
+    """
+    if not commit_messages:
+        return 0.0
+        
+    llm = ChatOllama(
+        model="llama3.2",
+        temperature=0.0,
+        format="json"
+    )
+    
+    prompt = PromptTemplate(
+        template="""You are a strict AI Code Reviewer. Evaluate the semantic quality of these recent commit messages.
+        
+COMMIT MESSAGES:
+{commit_messages}
+
+SCORING RULES:
+1. Penalize vague messages like 'update', 'fix', 'wip', 'test', 'init'. These indicate poor engineering practices.
+2. Reward descriptive messages like 'refactored auth flow', 'added vector embeddings', or standard conventional commits (e.g., 'feat(api): ...', 'fix(core): ...').
+3. Output a single 'quality_multiplier' float between 0.0 (pure spam/useless) and 1.0 (highly descriptive and professional).
+
+Return the evaluation in this exact JSON format:
+{format_instructions}
+""",
+        input_variables=["commit_messages"],
+        partial_variables={"format_instructions": JsonOutputParser(pydantic_object=CommitEvaluationPayload).get_format_instructions()}
+    )
+    
+    chain = prompt | llm | JsonOutputParser(pydantic_object=CommitEvaluationPayload)
+    
+    try:
+        messages_str = "\\n".join([f"- {msg}" for msg in commit_messages])
+        response = chain.invoke({"commit_messages": messages_str})
+        return float(response.get("quality_multiplier", 1.0))
+    except Exception as e:
+        logger.error(f"Error evaluating commit semantics: {e}")
+        return 1.0  # Fallback to no penalty if LLM fails

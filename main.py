@@ -67,7 +67,8 @@ def redact_entities(text: str) -> str:
 @app.post("/parse-resume")
 async def parse_resume(file: UploadFile = File(...)):
     """
-    Endpoint to parse a resume PDF, redact PII, and extract GitHub URL.
+    Endpoint to parse a resume PDF, redact PII, perform relevance gating, 
+    and extract GitHub URL.
     """
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Invalid file type. Only PDF files are accepted.")
@@ -77,12 +78,29 @@ async def parse_resume(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail="Could not read the uploaded file.")
     
+    # 1. Extract raw text from PDF
     raw_text = extract_text_from_pdf(content)
-    
     if not raw_text.strip():
         raise HTTPException(status_code=400, detail="Could not extract any text from the PDF.")
     
-    github_url = extract_github_url(raw_text)
+    # 2. Redact entities FIRST
+    sanitized_text = redact_entities(raw_text)
+    
+    # 3. Relevance Gating check
+    tech_keywords = ["engineer", "developer", "software", "data", "code", "tech"]
+    text_lower = sanitized_text.lower()
+    is_technical = any(kw in text_lower for kw in tech_keywords)
+    
+    if not is_technical:
+        return {
+            "github_url": None,
+            "tcfe_metrics": None,
+            "sanitized_text": sanitized_text,
+            "message": "Non-technical role detected. Skipping TCFE."
+        }
+    
+    # 4. Proceed with GitHub extraction for technical roles
+    github_url = extract_github_url(sanitized_text)
     
     tcfe_metrics = None
     if github_url:
@@ -100,16 +118,16 @@ async def parse_resume(file: UploadFile = File(...)):
                     
                     if repo_name and repo_owner and repo_created_at:
                         commits = await extractor.get_recent_commits(repo_owner, repo_name)
-                        tcfe_metrics = calculate_tcfe(commits, repo_created_at)
+                        # Run the blocking LLM logic in a separate thread
+                        tcfe_metrics = await asyncio.to_thread(calculate_tcfe, commits, repo_created_at)
         except Exception:
             tcfe_metrics = None
-    
-    sanitized_text = redact_entities(raw_text)
     
     return {
         "github_url": github_url,
         "tcfe_metrics": tcfe_metrics,
-        "sanitized_text": sanitized_text
+        "sanitized_text": sanitized_text,
+        "message": "Technical role processed successfully."
     }
 
 # --- Models and Endpoints for RAG & Graph Scaffolding ---
