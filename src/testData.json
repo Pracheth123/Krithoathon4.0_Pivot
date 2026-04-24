@@ -1,0 +1,16 @@
+{
+  "id": "C-TEST",
+  "name": "Pracheth M",
+  "score": 90,
+  "skills": [
+    { "name": "AI/ML", "match": "Mapped from candidate text: 'Aspiring AI/ML Engineer'" }
+  ],
+  "github_url": "https://github.com/Pracheth123",
+  "tcfe_metrics": {
+    "continuity_score": 0.3333,
+    "burst_score": 1,
+    "burst_detected": true
+  },
+  "sanitized_text": "[PERSON]prachethm iriyala @gmail.com    |   +91 9182603243  \nGitHub: https://github.com/Pracheth123   |   LinkedIn: https://www.linkedin.com/in/pracheth -m-730043322/  \nHyderabad, [GPE]  \nProfessional Summary  \nAspiring AI/ML Engineer...",
+  "xaiExplanation": "AI/ML candidate matching foundational skills."
+}
