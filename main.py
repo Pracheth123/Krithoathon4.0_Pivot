@@ -7,6 +7,8 @@ import PyPDF2
 import spacy
 from github_client import GitHubExtractor
 from tcfe_engine import calculate_tcfe
+from langchain_engine import embed_document, evaluate_candidate
+import asyncio
 
 app = FastAPI(title="Resume Parser API")
 
@@ -128,40 +130,40 @@ async def parse_resume(file: UploadFile = File(...)):
 # --- New Models and Endpoints for RAG & Graph Scaffolding ---
 
 class EmbedStoreRequest(BaseModel):
+    candidate_id: str
     sanitized_text: str
-    github_url: Optional[str] = None
-    tcfe_metrics: Optional[Dict[str, Any]] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+class EvaluateRequest(BaseModel):
+    candidate_id: str
+    job_description: str
+    pow_data: Optional[Dict[str, Any]] = None
 
 @app.post("/embed-store")
 async def embed_store(request: EmbedStoreRequest):
     """
-    Accepts sanitized resume data to eventually chunk and embed into ChromaDB.
+    Accepts sanitized resume data to chunk and embed into ChromaDB.
     """
-    # TODO: Implement LangChain document splitting and embedding logic here
-    # TODO: Store embedded vectors into ChromaDB
-    return {"status": "success", "message": "Document embedded successfully"}
+    try:
+        # Run blocking ChromaDB operations in a separate thread
+        await asyncio.to_thread(embed_document, request.candidate_id, request.sanitized_text, request.metadata or {})
+        return {"status": "success", "message": f"Document embedded successfully for candidate {request.candidate_id}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error embedding document: {str(e)}")
 
-@app.get("/similarity-search")
-async def similarity_search(q: str = Query(...), k: int = Query(10)):
+@app.post("/evaluate-candidate")
+async def evaluate_candidate_endpoint(request: EvaluateRequest):
     """
-    Queries ChromaDB and runs LLM-as-a-Judge scoring for candidates.
+    Queries ChromaDB for a candidate and runs LLM-as-a-Judge scoring.
     """
-    # TODO: Implement LangChain similarity search with ChromaDB using 'q'
-    # TODO: Run LLM-as-a-Judge scoring on the retrieved candidates
-    
-    # Returning dummy candidate objects
-    return [
-        {
-            "score": 0.89,
-            "xai_explanation": "Candidate has strong matching skills in Python and cloud deployment.",
-            "tcfe_metrics": {"continuity_score": 0.75, "burst_score": 0.8, "burst_detected": True}
-        },
-        {
-            "score": 0.72,
-            "xai_explanation": "Candidate shows potential but lacks direct experience in React.",
-            "tcfe_metrics": {"continuity_score": 0.45, "burst_score": 0.2, "burst_detected": False}
-        }
-    ]
+    try:
+        # Run blocking LLM and ChromaDB queries in a separate thread
+        results = await asyncio.to_thread(evaluate_candidate, request.candidate_id, request.job_description, request.pow_data or {})
+        return results
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error scoring candidate: {str(e)}")
 
 @app.get("/graph-data")
 async def get_graph_data():
