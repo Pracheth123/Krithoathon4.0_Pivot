@@ -7,7 +7,10 @@ export function setToken(token) {
 }
 
 function getHeaders(extraHeaders = {}) {
-  const h = { ...extraHeaders };
+  const h = { 
+    'ngrok-skip-browser-warning': 'true',
+    ...extraHeaders 
+  };
   if (globalToken) h['Authorization'] = `Bearer ${globalToken}`;
   return h;
 }
