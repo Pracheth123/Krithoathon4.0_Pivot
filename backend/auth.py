@@ -28,8 +28,17 @@ def init_db():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
+            email TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS roles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(id)
         )
     """)
     conn.commit()
@@ -39,12 +48,16 @@ init_db()
 
 # --- Pydantic Models ---
 class UserRegister(BaseModel):
-    username: str
+    email: str
     password: str
 
 class UserLogin(BaseModel):
-    username: str
+    email: str
     password: str
+
+class RoleCreate(BaseModel):
+    title: str
+    description: str
 
 # --- JWT Functions ---
 def create_access_token(data: dict):
@@ -62,30 +75,40 @@ async def get_current_user(authorization: str = Header(None)):
     token = authorization.split(" ")[1]
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
+        email: str = payload.get("sub")
+        if email is None:
             raise HTTPException(status_code=401, detail="Invalid token")
-        return username
+        return email
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token has expired")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-# --- Endpoints ---
+def get_user_id_from_email(email: str) -> int:
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=401, detail="User not found")
+    return row[0]
+
+# --- Auth Endpoints ---
 @auth_router.post("/register")
 def register(user: UserRegister):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     
     # Check if user exists
-    cursor.execute("SELECT id FROM users WHERE username = ?", (user.username,))
+    cursor.execute("SELECT id FROM users WHERE email = ?", (user.email,))
     if cursor.fetchone():
         conn.close()
-        raise HTTPException(status_code=400, detail="Username already registered")
+        raise HTTPException(status_code=400, detail="Email already registered")
         
     # Hash password and insert
     hashed_password = hash_password(user.password)
-    cursor.execute("INSERT INTO users (username, password_hash) VALUES (?, ?)", (user.username, hashed_password))
+    cursor.execute("INSERT INTO users (email, password_hash) VALUES (?, ?)", (user.email, hashed_password))
     conn.commit()
     conn.close()
     
@@ -96,12 +119,40 @@ def login(user: UserLogin):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     
-    cursor.execute("SELECT password_hash FROM users WHERE username = ?", (user.username,))
+    cursor.execute("SELECT password_hash FROM users WHERE email = ?", (user.email,))
     row = cursor.fetchone()
     conn.close()
     
     if not row or not verify_password(user.password, row[0]):
-        raise HTTPException(status_code=401, detail="Invalid username or password")
+        raise HTTPException(status_code=401, detail="Invalid email or password")
         
-    access_token = create_access_token(data={"sub": user.username})
+    access_token = create_access_token(data={"sub": user.email})
     return {"access_token": access_token, "token_type": "bearer"}
+
+# --- Role Endpoints (Multi-Tenant ATS) ---
+@auth_router.post("/roles")
+def create_role(role: RoleCreate, current_user_email: str = Depends(get_current_user)):
+    user_id = get_user_id_from_email(current_user_email)
+    
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO roles (user_id, title, description) VALUES (?, ?, ?)", 
+                   (user_id, role.title, role.description))
+    role_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    
+    return {"id": role_id, "title": role.title, "message": "Role created successfully"}
+
+@auth_router.get("/roles")
+def get_roles(current_user_email: str = Depends(get_current_user)):
+    user_id = get_user_id_from_email(current_user_email)
+    
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, title, description FROM roles WHERE user_id = ? ORDER BY id DESC", (user_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    
+    roles = [{"id": r[0], "title": r[1], "description": r[2]} for r in rows]
+    return {"roles": roles}

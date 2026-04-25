@@ -52,13 +52,13 @@ function MultiDropZone({ onFiles }) {
       onClick={() => inputRef.current?.click()}
       style={{ padding: '3rem', cursor: 'pointer' }}
     >
-      <input ref={inputRef} type="file" accept=".pdf" multiple
+      <input ref={inputRef} type="file" accept=".pdf,.docx" multiple
         style={{ display: 'none' }}
         onChange={e => { if (e.target.files?.length) onFiles(Array.from(e.target.files)); e.target.value = null; }} />
       <span className="drop-zone-icon">☁️</span>
-      <div className="drop-zone-title">Drag & Drop PDF Resumes</div>
+      <div className="drop-zone-title">Drag & Drop PDF or Word Resumes</div>
       <div className="drop-zone-sub">
-        or <span style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>click to browse</span> — You can select multiple files
+        or <span style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>click to browse</span> — You can select multiple PDF or DOCX files
       </div>
     </div>
   );
@@ -239,7 +239,7 @@ function ResultsDashboard({ data, onClose }) {
             <div className="section-icon">🕸️</div>
             <div><div className="section-title">Skill Knowledge Graph</div><div className="section-sub">D3.js force-directed topology — drag nodes to explore</div></div>
           </div>
-          <div className="graph-container">
+          <div className="graph-container" style={{ minHeight: '400px', width: '100%', position: 'relative' }}>
             {data.graph_data && <D3Graph graphData={data.graph_data} />}
           </div>
           <div className="graph-legend">
@@ -276,7 +276,8 @@ export default function AppPage({ systemOnline, role, onHome, showToast }) {
   /* Phase 2 & 3 — Add Files and Process */
   const handleFilesAdded = (files) => {
     const valid = files.filter(f => {
-      if (!f.name.toLowerCase().endsWith('.pdf')) { showToast(`Skipped ${f.name} (not a PDF).`, 'error'); return false; }
+      const name = f.name.toLowerCase();
+      if (!name.endsWith('.pdf') && !name.endsWith('.docx')) { showToast(`Skipped ${f.name} (not a PDF or Word doc).`, 'error'); return false; }
       if (f.size > 10 * 1024 * 1024) { showToast(`Skipped ${f.name} (exceeds 10MB).`, 'error'); return false; }
       return true;
     });

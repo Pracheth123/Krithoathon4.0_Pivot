@@ -4,3 +4,5 @@ backend/__pycache__/
 backend/venv/
 backend/chroma_db/
 .env
+others/
+backend/*.db

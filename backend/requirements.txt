@@ -8,3 +8,4 @@ langchain
 langchain-huggingface
 langchain-openai
 chromadb
+python-docx

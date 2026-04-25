@@ -89,10 +89,10 @@ def embed_document(candidate_id: str, text: str, metadata: Dict[str, Any] = None
         ids=ids
     )
 
-def evaluate_candidate(candidate_id: str, job_description: str, pow_data: Dict[str, Any]) -> Dict[str, Any]:
+def evaluate_candidate(candidate_id: str, job_description: str, pow_data: Dict[str, Any], role_context: str = "") -> Dict[str, Any]:
     """
     Retrieves the most semantically relevant candidate chunks from ChromaDB and evaluates 
-    the candidate against the Job Description using a local LLM.
+    the candidate against the Job Description using a local LLM with dynamic weighting.
     """
     # 1. Fetch all chunks for the candidate from ChromaDB
     results = collection.get(
@@ -115,29 +115,27 @@ def evaluate_candidate(candidate_id: str, job_description: str, pow_data: Dict[s
         format="json"  # Forces Ollama to strictly output JSON
     )
     
-    # Dynamic Rubric Logic
-    if pow_data:
-        scoring_rubric = """
-        Use the Technical Scoring Rubric:
-        - semantic_skill_score_40 (Max 40): Evaluate deep technical overlap.
-        - pow_depth_score_30 (Max 30): Evaluate based on provided Proof of Work/GitHub data.
-        - experience_score_15 (Max 15): Alignment of projects/roles with the JD.
-        - keyword_score_15 (Max 15): Exact tech stack matches.
-        """
-    else:
-        scoring_rubric = """
-        Use the Non-Technical/Business Scoring Rubric:
-        - semantic_skill_score_40 (Max 50): Evaluate core competencies and soft/hard skill overlap.
-        - experience_score_15 (Max 35): Heavily weigh their track record, achievements, and past roles.
-        - keyword_score_15 (Max 15): Exact industry terminology matches.
-        - pow_depth_score_30 (Max 0): ALWAYS output 0. Do not penalize the candidate; this metric is not applicable.
-        """
+    # Dynamic Rubric Logic (Phase 4: Dynamic AI Evaluation Weights)
+    scoring_rubric = """
+    Use the Scoring Rubric. You must dynamically adjust the internal weighting based on the provided Job Role Context.
+    - If the role is highly technical (e.g., Software Engineer), heavily penalize a lack of pow_depth_score_30 and prioritize semantic_skill_score_40.
+    - If the role is non-technical (e.g., HR, Sales, Ops), set pow_depth_score_30 to 0 (do not penalize) and shift the weight heavily into experience_score_15 and semantic_skill_score_40.
+    
+    Scores to provide:
+    - semantic_skill_score_40 (Max 40): Evaluate core competencies and soft/hard skill overlap.
+    - pow_depth_score_30 (Max 30): Evaluate based on provided Proof of Work/GitHub data. 0 if non-technical role.
+    - experience_score_15 (Max 15): Alignment of projects/roles with the JD.
+    - keyword_score_15 (Max 15): Exact industry terminology/tech stack matches.
+    """
 
     # 4. Define Aggressive Prompt for the Small Local Model
     prompt = PromptTemplate(
         template="""You are an AI Assessor. NEVER echo or repeat the Job Description. CRITICAL: You must output ONLY a raw, valid JSON object. Do not use markdown code blocks (```json). Do not include any conversational text before or after the JSON. Evaluate the candidate purely on semantic business/operational skills if `pow_data` is empty. DO NOT leave any fields blank.
 
-JOB DESCRIPTION:
+JOB ROLE CONTEXT (Dynamic Target):
+{role_context}
+
+JOB DESCRIPTION (If any):
 {job_description}
 
 CANDIDATE PROOF-OF-WORK DATA (GitHub TCFE Metrics):
@@ -149,9 +147,9 @@ RELEVANT RESUME EXCERPTS:
 SCORING RULES (You MUST assign a number > 0 for matching skills):
 {scoring_rubric}
 5. total_score: Sum of the above 4 scores.
-6. xai_explanation: You MUST write a 2-sentence explanation of why you gave these scores. DO NOT LEAVE BLANK. CRITICAL: If the provided `pow_data` is empty or null, the candidate is a non-technical applicant. You MUST NOT mention GitHub, commit history, burst scores, or proof-of-work in the XAI explanation. Base your evaluation purely on the semantic overlap between the resume and the job description. If `pow_data` is present, mention the candidate's recent commit activity or 'burst' status in the xai_explanation if relevant to their current skill momentum.
+6. xai_explanation: You MUST write a 2-sentence explanation of why you gave these scores. DO NOT LEAVE BLANK. Mention how the candidate fits the specific {role_context}. If the role is non-technical, do not mention GitHub. Base your evaluation purely on the semantic overlap between the resume and the job description.
 7. extracted_candidate_skills: Extract a list of STRICT technical hard skills (e.g., Python, AWS, React) from the candidate's resume. Do NOT include generic buzzwords (e.g., "Leadership", "Agile").
-8. extracted_jd_skills: Extract a list of STRICT technical hard skills from the job description. Do NOT include generic buzzwords.
+8. extracted_jd_skills: Extract a list of STRICT technical hard skills from the job description or role context. Do NOT include generic buzzwords.
 
 Return the evaluation in this exact JSON format:
 {{
@@ -165,7 +163,7 @@ Return the evaluation in this exact JSON format:
   "extracted_jd_skills": ["<skill1>", "<skill2>"]
 }}
 """,
-        input_variables=["job_description", "pow_data", "resume_context", "scoring_rubric"]
+        input_variables=["role_context", "job_description", "pow_data", "resume_context", "scoring_rubric"]
     )
     
     chain = prompt | llm
@@ -173,6 +171,7 @@ Return the evaluation in this exact JSON format:
     # 5. Score Candidate using LLM
     try:
         raw_response = chain.invoke({
+            "role_context": role_context,
             "job_description": job_description,
             "pow_data": json.dumps(pow_data),
             "resume_context": resume_context,

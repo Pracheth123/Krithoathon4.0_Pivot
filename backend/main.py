@@ -1,10 +1,12 @@
 import io
 import re
+import os
 from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 import PyPDF2
+import docx
 import spacy
 from github_client import GitHubExtractor
 from tcfe_engine import calculate_tcfe
@@ -20,10 +22,10 @@ app.include_router(auth_router)
 # --- 🚨 CORS MIDDLEWARE FIX (For Frontend Integration) ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Allow all origins for local hackathon testing
-    allow_credentials=True,
-    allow_methods=["*"], # Allow all methods (POST, GET, OPTIONS, etc.)
-    allow_headers=["*"], # Allow all headers
+    allow_origins=["*"], # Wildcard works ONLY if allow_credentials=False
+    allow_credentials=False, # We use Bearer tokens, not cookies, so this can be False
+    allow_methods=["*"], 
+    allow_headers=["*"], 
 )
 
 # --- HEALTH CHECK (For React Status Bar) ---
@@ -50,12 +52,19 @@ def extract_text_from_pdf(file_content: bytes) -> str:
             page_text = page.extract_text()
             if page_text:
                 text += page_text + "\n"
-        # Strip out invisible control characters but keep standard newlines and text
-        clean_text = re.sub(r'[^\x20-\x7E\n]', '', text)
-        return clean_text
-        
+        # Scrub unprintable characters that might confuse the tokenizer
+        return re.sub(r'[^\x00-\x7F]+', ' ', text)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error reading PDF file: {str(e)}")
+        raise ValueError(f"Failed to extract text from PDF: {str(e)}")
+
+def extract_text_from_docx(file_content: bytes) -> str:
+    """Extracts text from a Word document using python-docx."""
+    try:
+        doc = docx.Document(io.BytesIO(file_content))
+        text = "\n".join([para.text for para in doc.paragraphs])
+        return re.sub(r'[^\x00-\x7F]+', ' ', text)
+    except Exception as e:
+        raise ValueError(f"Failed to extract text from DOCX: {str(e)}")
 
 def extract_github_url(text: str) -> str | None:
     """Extracts the first GitHub profile URL found in the text."""
@@ -66,15 +75,18 @@ def extract_github_url(text: str) -> str | None:
     return None
 
 def redact_entities(text: str) -> str:
-    """Redacts PERSON, GPE, DATE, and ORG entities from the text using spaCy."""
+    """Uses spaCy to detect and redact Person Names and Organizations for blind screening."""
     doc = nlp(text)
     redacted_text = text
     
-    # Sort entities by start character in reverse to replace from end to beginning
-    entities_to_redact = [ent for ent in doc.ents if ent.label_ in {"PERSON", "GPE", "DATE", "ORG"}]
-    entities_to_redact.sort(key=lambda x: x.start_char, reverse=True)
+    # Sort entities in reverse order to avoid index shifting when replacing text
+    entities = sorted(
+        [ent for ent in doc.ents if ent.label_ in ["PERSON", "ORG", "GPE"]],
+        key=lambda e: e.start_char,
+        reverse=True
+    )
     
-    for ent in entities_to_redact:
+    for ent in entities:
         start = ent.start_char
         end = ent.end_char
         replacement = f"[{ent.label_}]"
@@ -85,21 +97,29 @@ def redact_entities(text: str) -> str:
 @app.post("/parse-resume")
 async def parse_resume(file: UploadFile = File(...), current_user: str = Depends(get_current_user)):
     """
-    Phase 1 & 2: Parses PDF, redacts PII, checks for technical relevance, 
+    Phase 1 & 2: Parses PDF or DOCX, redacts PII, checks for technical relevance, 
     and extracts live GitHub metrics (TCFE).
     """
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Invalid file type. Only PDF files are accepted.")
+    filename_lower = file.filename.lower()
+    if not (filename_lower.endswith(".pdf") or filename_lower.endswith(".docx")):
+        raise HTTPException(status_code=400, detail="Invalid file type. Only PDF and Word (.docx) documents are accepted.")
     
     try:
         content = await file.read()
     except Exception as e:
         raise HTTPException(status_code=500, detail="Could not read the uploaded file.")
     
-    # 1. Extract raw text from PDF
-    raw_text = extract_text_from_pdf(content)
+    # 1. Extract raw text based on file extension
+    try:
+        if filename_lower.endswith(".pdf"):
+            raw_text = extract_text_from_pdf(content)
+        else:
+            raw_text = extract_text_from_docx(content)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+        
     if not raw_text.strip():
-        raise HTTPException(status_code=400, detail="Could not extract any text from the PDF.")
+        raise HTTPException(status_code=400, detail="Could not extract any text from the document.")
     
     # 2. Redact entities FIRST (Blind Screening)
     sanitized_text = redact_entities(raw_text)
@@ -162,6 +182,7 @@ class EvaluateRequest(BaseModel):
     candidate_id: str
     job_description: str
     pow_data: Optional[Dict[str, Any]] = None
+    role_id: Optional[int] = None
 
 @app.post("/embed-store")
 async def embed_store(request: EmbedStoreRequest, current_user: str = Depends(get_current_user)):
@@ -183,12 +204,26 @@ async def evaluate_candidate_endpoint(request: EvaluateRequest, current_user: st
         if not active_pow_data:
             active_pow_data = {}
 
+        # Fetch Role Context from DB if provided
+        role_context = ""
+        if request.role_id:
+            import sqlite3
+            from auth import DB_FILE
+            conn = sqlite3.connect(DB_FILE)
+            cursor = conn.cursor()
+            cursor.execute("SELECT title, description FROM roles WHERE id = ?", (request.role_id,))
+            row = cursor.fetchone()
+            conn.close()
+            if row:
+                role_context = f"Role Title: {row[0]}\nRole Context: {row[1]}"
+
         # 1. Run blocking LLM evaluation
         llm_evaluation = await asyncio.to_thread(
             evaluate_candidate, 
             request.candidate_id, 
             request.job_description, 
-            active_pow_data
+            active_pow_data,
+            role_context
         )
 
         print("\n=== RAW LLM OUTPUT ===")
@@ -247,7 +282,10 @@ async def evaluate_candidate_endpoint(request: EvaluateRequest, current_user: st
     except ValueError as ve:
         raise HTTPException(status_code=404, detail=str(ve))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error scoring candidate: {str(e)}")
+        import traceback
+        error_details = traceback.format_exc()
+        print("ERROR IN EVALUATE CANDIDATE:\n", error_details)
+        raise HTTPException(status_code=500, detail=f"Error scoring candidate: {str(e)}\n\n{error_details}")
 
 
 class SkillsPayload(BaseModel):
