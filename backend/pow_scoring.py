@@ -3,6 +3,10 @@ import math
 import httpx
 from datetime import datetime, timezone, timedelta
 import asyncio
+from dotenv import load_dotenv
+
+# Load environment variables explicitly from the current directory's .env file
+load_dotenv()
 
 async def fetch_commit_count(client: httpx.AsyncClient, handle: str, headers: dict, since_date: str = None) -> int:
     """Uses the GitHub Search API to rapidly fetch commit counts."""
