@@ -91,144 +91,107 @@ def embed_document(candidate_id: str, text: str, metadata: Dict[str, Any] = None
 
 def evaluate_candidate(candidate_id: str, job_description: str, pow_data: Dict[str, Any], role_context: str = "", pow_results: Dict[str, Any] = None) -> Dict[str, Any]:
     """
-    Evaluates a candidate using Llama 3.2. If pow_results are provided,
-    it strictly overrides the LLM's hallucinated GitHub score with the deterministic engine's math.
-    Retrieves the most semantically relevant candidate chunks from ChromaDB and evaluates 
-    the candidate against the Job Description using a local LLM with dynamic weighting.
+    Evaluates a candidate using deterministic Vector Search mathematical similarities.
+    Uses Llama 3.2 purely to generate a strict, 2-sentence Traceability Report based on the math.
     """
-    # 1. Fetch all chunks for the candidate from ChromaDB
-    results = collection.get(
+    # 1. Mathematical Vector Search
+    # We query ChromaDB to get the Cosine Similarity between the JD and the candidate's chunks
+    results = collection.query(
+        query_texts=[job_description],
         where={"candidate_id": candidate_id},
-        include=["documents"]
+        n_results=5,
+        include=["documents", "distances"]
     )
     
-    if not results["documents"]:
+    if not results.get("documents") or not results["documents"][0]:
         raise ValueError(f"No documents found for candidate ID {candidate_id}")
         
-    # 2. Join all chunks into a single string for full context
-    retrieved_chunks = results["documents"]
-    resume_context = "\n\n---\n\n".join(retrieved_chunks)
+    distances = results.get("distances", [[1.0]])[0]
+    avg_distance = sum(distances) / len(distances) if distances else 1.0
     
-    # 3. Initialize local LLM for RTX 4050 (Llama 3.2 3B)
-    llm = ChatOllama(
-        model="llama3.2",
-        base_url="http://127.0.0.1:11434",
-        temperature=0.0,
-        format="json"  # Forces Ollama to strictly output JSON
-    )
+    # Convert Cosine distance to similarity percentage
+    similarity = max(0.0, 1.0 - avg_distance)
+    semantic_skill_score_40 = min(40.0, round(similarity * 40.0, 2))
     
-    # Dynamic Rubric Logic (Phase 4: Dynamic AI Evaluation Weights)
-    scoring_rubric = """
-    Use the Scoring Rubric. You must dynamically adjust the internal weighting based on the provided Job Role Context.
-    - If the role is highly technical (e.g., Software Engineer), heavily penalize a lack of pow_depth_score_30 and prioritize semantic_skill_score_40.
-    - If the role is non-technical (e.g., HR, Sales, Ops), set pow_depth_score_30 to 0 (do not penalize) and shift the weight heavily into experience_score_15 and semantic_skill_score_40.
+    # 2. Mathematical Heuristic Scoring
+    resume_text = "\n".join(results["documents"][0]).lower()
+    jd_words = set(re.findall(r'\b[a-zA-Z]{4,}\b', job_description.lower()))
     
-    Scores to provide:
-    - semantic_skill_score_40 (Max 40): Evaluate core competencies and soft/hard skill overlap.
-    - pow_depth_score_30 (Max 30): Evaluate based on provided Proof of Work/GitHub data. 0 if non-technical role.
-    - experience_score_15 (Max 15): Alignment of projects/roles with the JD.
-    - keyword_score_15 (Max 15): Exact industry terminology/tech stack matches.
-    """
-
-    # 4. Define Aggressive Prompt for the Small Local Model
-    prompt = PromptTemplate(
-        template="""You are an AI Assessor. NEVER echo or repeat the Job Description. CRITICAL: You must output ONLY a raw, valid JSON object. Do not use markdown code blocks (```json). Do not include any conversational text before or after the JSON. Evaluate the candidate purely on semantic business/operational skills if `pow_data` is empty. DO NOT leave any fields blank.
-
-JOB ROLE CONTEXT (Dynamic Target):
-{role_context}
-
-JOB DESCRIPTION (If any):
-{job_description}
-
-CANDIDATE PROOF-OF-WORK DATA (GitHub TCFE Metrics):
-{pow_data}
-
-RELEVANT RESUME EXCERPTS:
-{resume_context}
-
-SCORING RULES (You MUST assign a number > 0 for matching skills):
-{scoring_rubric}
-5. total_score: Sum of the above 4 scores.
-6. xai_explanation: You MUST write a 2-sentence explanation of why you gave these scores. DO NOT LEAVE BLANK. Mention how the candidate fits the specific {role_context}. If the role is non-technical, do not mention GitHub. Base your evaluation purely on the semantic overlap between the resume and the job description.
-7. extracted_candidate_skills: Extract a list of STRICT technical hard skills (e.g., Python, AWS, React) from the candidate's resume. Do NOT include generic buzzwords (e.g., "Leadership", "Agile").
-8. extracted_jd_skills: Extract a list of STRICT technical hard skills from the job description or role context. Do NOT include generic buzzwords.
-
-Return the evaluation in this exact JSON format:
-{{
-  "semantic_skill_score_40": "<integer between 0 and 40>",
-  "pow_depth_score_30": "<integer between 0 and 30>",
-  "experience_score_15": "<integer between 0 and 15>",
-  "keyword_score_15": "<integer between 0 and 15>",
-  "total_score": "<integer sum of the above>",
-  "xai_explanation": "<A highly concise, natural-language Explainable AI summary>",
-  "extracted_candidate_skills": ["<skill1>", "<skill2>"],
-  "extracted_jd_skills": ["<skill1>", "<skill2>"]
-}}
-""",
-        input_variables=["role_context", "job_description", "pow_data", "resume_context", "scoring_rubric"]
-    )
+    # Filter common stop words
+    stop_words = {"this", "that", "with", "from", "your", "have", "will", "what", "role", "team", "work", "experience"}
+    jd_words = jd_words - stop_words
     
-    chain = prompt | llm
+    matched_keywords = [w for w in jd_words if w in resume_text]
+    keyword_ratio = len(matched_keywords) / max(len(jd_words), 1)
+    # Slight boost curve for keyword ratio
+    keyword_score_15 = min(15.0, round((keyword_ratio * 1.5) * 15.0, 2))
     
-    # 5. Score Candidate using LLM
+    exp_keywords = ['years', 'senior', 'lead', 'managed', 'developed', 'architected', 'designed']
+    exp_matches = [w for w in exp_keywords if w in resume_text]
+    experience_score_15 = min(15.0, round((len(exp_matches) / 4) * 15.0, 2))
+    
+    missing_key_terms = list(jd_words - set(matched_keywords))[:5]
+    
+    # 3. Traceability JSON for the LLM
+    vector_similarity_results = {
+        "semantic_match_percentage": round(similarity * 100, 2),
+        "keyword_match_percentage": round(keyword_ratio * 100, 2),
+        "experience_indicators_found": exp_matches,
+        "missing_key_terms_or_gaps": missing_key_terms,
+        "matched_skills": matched_keywords[:5]
+    }
+    
+    # 4. Traceability Report Prompt (Strict Data Translation)
+    prompt = f"""You are a strict Data Translation Agent generating a "Traceability Report" for a recruiter. 
+You are NOT evaluating the candidate. The evaluation has already been mathematically calculated via Vector Search.
+
+You will be provided with a JSON object containing the exact mathematical skill overlaps and gaps between the candidate and the job description.
+
+RULES:
+1. Translate the provided JSON data into two concise, professional sentences explaining the match.
+2. DO NOT hallucinate, infer, or invent any skills, traits, or reasoning that are not explicitly present in the JSON payload.
+3. If a skill is listed under "gaps" or "missing_key_terms_or_gaps", you must state it as a missing requirement. Do not make excuses for the candidate.
+
+Input JSON: {json.dumps(vector_similarity_results)}
+Traceability Report:"""
+
+    xai_explanation = ""
     try:
-        raw_response = chain.invoke({
-            "role_context": role_context,
-            "job_description": job_description,
-            "pow_data": json.dumps(pow_data),
-            "resume_context": resume_context,
-            "scoring_rubric": scoring_rubric
-        })
-        
-        # Smart Parsing (The Regex Fix)
-        text_content = raw_response.content if hasattr(raw_response, 'content') else str(raw_response)
-        match = re.search(r'\{.*\}', text_content, re.DOTALL)
-        dict_string = match.group(0) if match else text_content
-        
-        try:
-            # Try standard JSON first
-            parsed_data = json.loads(dict_string)
-        except json.JSONDecodeError:
-            try:
-                # Hackathon Cheat Code: Safely evaluate Python-style dictionary strings (handles single quotes)
-                parsed_data = ast.literal_eval(dict_string)
-            except Exception as e:
-                print(f"FATAL PARSE ERROR: {e}")
-                raise ValueError(f"No JSON or Python dictionary found in LLM response: {text_content}")
-                
-        # 🚀 DETERMINISTIC MATH OVERRIDE 🚀
-        # Never trust the LLM with GitHub math. Override with our engine.
-        if pow_results and not pow_results.get("pow_data_unavailable", True):
-            # Scale the 0-100 PoW score into the 30-point bracket
-            pow_score = round(pow_results.get("pow_score", 0.0) * 0.30, 2)
-            parsed_data['pow_depth_score_30'] = pow_score
-        else:
-            # If no github URL, zero it out.
-            pow_score = 0
-            parsed_data['pow_depth_score_30'] = pow_score
-            
-        sem_score = int(parsed_data.get('semantic_skill_score_40', 0))
-        exp_score = int(parsed_data.get('experience_score_15', 0))
-        key_score = int(parsed_data.get('keyword_score_15', 0))
-        
-        # Python calculates the absolute truth
-        parsed_data['total_score'] = round(sem_score + pow_score + exp_score + key_score, 2)
-        
-        return parsed_data
-            
+        import httpx
+        with httpx.Client(timeout=30.0) as client:
+            res = client.post("http://localhost:11434/api/generate", json={
+                "model": "llama3.2",
+                "prompt": prompt,
+                "stream": False
+            })
+            if res.status_code == 200:
+                data = res.json()
+                xai_explanation = data.get("response", "").strip()
     except Exception as e:
-        logger.error(f"Error evaluating candidate {candidate_id}: {e}")
-        print(f"WARNING: LLM output failed to parse as JSON. Using fallback. Error: {e}")
-        return {
-            "semantic_skill_score_40": 20.0,
-            "pow_depth_score_30": 0.0,
-            "experience_score_15": 10.0,
-            "keyword_score_15": 10.0,
-            "total_score": 40.0,
-            "xai_explanation": "Candidate evaluated on semantic matches. Strong overlap in core business operations.",
-            "extracted_candidate_skills": [],
-            "extracted_jd_skills": []
-        }
+        logger.error(f"Ollama Traceability Report failed: {e}")
+        
+    if not xai_explanation:
+        xai_explanation = f"Mathematical scan completed. Semantic match: {round(similarity*100)}%. Missing terms: {', '.join(missing_key_terms)}."
+
+    # 5. Compile Final Payload
+    pow_score = 0.0
+    if pow_results and not pow_results.get("pow_data_unavailable", True):
+        pow_score = round(pow_results.get("pow_score", 0.0) * 0.30, 2)
+
+    total_score = round(semantic_skill_score_40 + pow_score + experience_score_15 + keyword_score_15, 2)
+
+    parsed_data = {
+        "semantic_skill_score_40": semantic_skill_score_40,
+        "pow_depth_score_30": pow_score,
+        "experience_score_15": experience_score_15,
+        "keyword_score_15": keyword_score_15,
+        "total_score": total_score,
+        "xai_explanation": xai_explanation,
+        "extracted_candidate_skills": matched_keywords[:10],
+        "extracted_jd_skills": list(jd_words)[:10]
+    }
+    
+    return parsed_data
 
 def evaluate_commit_semantics(commit_messages: List[str]) -> float:
     """
