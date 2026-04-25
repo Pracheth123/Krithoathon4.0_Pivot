@@ -214,21 +214,21 @@ export default function LandingPage({ onLaunch, showToast }) {
   
   // Auth Modal State
   const [authModal, setAuthModal] = useState(null); // 'login', 'register', or null
-  const [authForm, setAuthForm]   = useState({ username: '', password: '' });
+  const [authForm, setAuthForm]   = useState({ email: '', password: '' });
   const [authLoading, setAuthLoading] = useState(false);
 
   const handleAuth = async (e) => {
     e.preventDefault();
-    if (!authForm.username || !authForm.password) return showToast('Please enter credentials.', 'error');
+    if (!authForm.email || !authForm.password) return showToast('Please enter credentials.', 'error');
     setAuthLoading(true);
     try {
       if (authModal === 'login') {
-        const data = await loginUser(authForm.username, authForm.password);
+        const data = await loginUser(authForm.email, authForm.password);
         setToken(data.access_token);
         showToast('Login successful!', 'success');
         onLaunch();
       } else {
-        await registerUser(authForm.username, authForm.password);
+        await registerUser(authForm.email, authForm.password);
         showToast('Registration successful! Please log in.', 'success');
         setAuthModal('login');
       }
@@ -260,8 +260,7 @@ export default function LandingPage({ onLaunch, showToast }) {
           {/* Removed links for UX cleanup */}
         </ul>
         <div className="nav-right">
-          <button className="btn btn-ghost btn-sm" onClick={() => setAuthModal('login')}>Login</button>
-          <button className="btn btn-free-trial" onClick={() => setAuthModal('register')}>Sign Up</button>
+          {/* Removed redundant login buttons */}
         </div>
       </nav>
 
@@ -279,28 +278,23 @@ export default function LandingPage({ onLaunch, showToast }) {
             your <span className="highlight">AI-powered</span> workforce
           </h1>
 
-          <p className="hero-sub">
-            Evaluate any skill quickly, accurately, and affordably with
-            unlimited technical assessments and interviews.
+          <p className="hero-sub" style={{ marginBottom: '2.5rem' }}>
+            Transform your hiring pipeline into a Multi-Tenant ATS. Create roles, upload resumes, and let the Local Llama 3.2 AI instantly score candidates based on dynamic contexts and GitHub Proof-of-Work.
           </p>
 
-          <div className="hero-cta-bar">
-            <input
-              className="hero-email-input"
-              type="email"
-              placeholder="Work email address..."
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-            />
-            <button className="btn btn-free-trial hero-cta-btn" onClick={() => setAuthModal('register')}>
-              Start Free Trial
+          <div className="hero-cta-group" style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
+            <button className="btn btn-primary btn-lg" onClick={() => setAuthModal('login')} style={{ padding: '1rem 3rem', fontSize: '1.1rem' }}>
+              Log In to Workspace
+            </button>
+            <button className="btn btn-free-trial btn-lg" onClick={() => setAuthModal('register')} style={{ padding: '1rem 3rem', fontSize: '1.1rem' }}>
+              Create HR Account
             </button>
           </div>
+
           <p className="hero-cta-sub">No credit card required · Free forever for up to 5 candidates</p>
 
           <div className="hero-cta-alt">
-            <button className="btn btn-outline" onClick={() => setAuthModal('login')}>Upload Resume →</button>
-            <a href="#pipeline" className="btn btn-ghost">See the Pipeline</a>
+            <a href="#pipeline" className="btn btn-ghost">Learn How It Works ↓</a>
           </div>
         </div>
 
@@ -490,9 +484,9 @@ export default function LandingPage({ onLaunch, showToast }) {
             
             <form onSubmit={handleAuth} style={{ display:'flex', flexDirection:'column', gap:'1rem' }}>
               <div>
-                <label style={{ display:'block', fontSize:'0.8rem', fontWeight:600, marginBottom:'0.25rem', color:'var(--text-secondary)' }}>Username</label>
-                <input type="text" className="form-textarea" style={{ height:'40px', minHeight:'40px', padding:'0 0.75rem', overflow:'hidden', resize:'none' }}
-                  value={authForm.username} onChange={e => setAuthForm({...authForm, username: e.target.value})} />
+                <label style={{ display:'block', fontSize:'0.8rem', fontWeight:600, marginBottom:'0.25rem', color:'var(--text-secondary)' }}>Email</label>
+                <input type="email" className="form-textarea" style={{ height:'40px', minHeight:'40px', padding:'0 0.75rem', overflow:'hidden', resize:'none' }}
+                  value={authForm.email} onChange={e => setAuthForm({...authForm, email: e.target.value})} />
               </div>
               <div>
                 <label style={{ display:'block', fontSize:'0.8rem', fontWeight:600, marginBottom:'0.25rem', color:'var(--text-secondary)' }}>Password</label>

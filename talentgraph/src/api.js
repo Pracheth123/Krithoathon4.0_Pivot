@@ -18,11 +18,11 @@ export async function healthCheck() {
   return res.json();
 }
 
-export async function loginUser(username, password) {
+export async function loginUser(email, password) {
   const res = await fetch(`${API_BASE_URL}/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password })
+    body: JSON.stringify({ email, password })
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -31,11 +31,11 @@ export async function loginUser(username, password) {
   return res.json();
 }
 
-export async function registerUser(username, password) {
+export async function registerUser(email, password) {
   const res = await fetch(`${API_BASE_URL}/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password })
+    body: JSON.stringify({ email, password })
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -72,11 +72,42 @@ export async function embedStore(candidateId, sanitizedText) {
   return res.json();
 }
 
-export async function evaluateCandidate(candidateId, jobDescription, powData) {
+export async function evaluateCandidate(candidateId, jobDescription, powData, roleId = null) {
+  const payload = { 
+    candidate_id: candidateId, 
+    job_description: jobDescription, 
+    pow_data: powData || {} 
+  };
+  if (roleId) payload.role_id = roleId;
+
   const res = await fetch(`${API_BASE_URL}/evaluate-candidate`, {
     method: 'POST',
     headers: getHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ candidate_id: candidateId, job_description: jobDescription, pow_data: powData || {} }),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function createRole(title, description) {
+  const res = await fetch(`${API_BASE_URL}/roles`, {
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ title, description }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function getRoles() {
+  const res = await fetch(`${API_BASE_URL}/roles`, {
+    headers: getHeaders(),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));

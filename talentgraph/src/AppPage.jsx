@@ -257,9 +257,9 @@ function ResultsDashboard({ data, onClose }) {
 }
 
 /* ── Main AppPage ──────────────────────────────────────────── */
-export default function AppPage({ systemOnline, onHome, showToast }) {
-  const [phase, setPhase] = useState(1);
-  const [jd, setJd] = useState('');
+export default function AppPage({ systemOnline, role, onHome, showToast }) {
+  const [phase, setPhase] = useState(role ? 2 : 1);
+  const [jd, setJd] = useState(role ? role.description : '');
   
   // Array of { id, file, status, parseData, evalData, score, errorMsg }
   const [candidates, setCandidates] = useState([]);
@@ -346,7 +346,7 @@ export default function AppPage({ systemOnline, onHome, showToast }) {
       }
       // ------------------------------------------
 
-      const eData = await evaluateCandidate(cand.id, jd, powData);
+      const eData = await evaluateCandidate(cand.id, jd, powData, role?.id);
       
       updateCand({ 
         status: 'done', 
@@ -381,8 +381,8 @@ export default function AppPage({ systemOnline, onHome, showToast }) {
       <main className="app-layout">
         <Stepper phase={phase} />
 
-        {/* ── Phase 1: JD ─────────────────────────────────────── */}
-        {phase === 1 && (
+        {/* ── Phase 1: JD (Skip if role provided) ─────────────── */}
+        {phase === 1 && !role && (
           <div className="phase-content">
             <div className="glass-card">
               <div className="section-header">
