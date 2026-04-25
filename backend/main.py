@@ -235,7 +235,7 @@ async def evaluate_candidate_endpoint(request: EvaluateRequest, current_user: st
         pow_results = None
         if active_pow_data.get("github_user"):
             from pow_scoring import calculate_pow_score
-            pow_results = await calculate_pow_score(active_pow_data.get("github_user"))
+            pow_results = await calculate_pow_score(active_pow_data.get("github_user"), request.job_description)
 
         # 1. Run blocking LLM evaluation
         llm_evaluation = await asyncio.to_thread(

@@ -3,6 +3,7 @@ import math
 import httpx
 from datetime import datetime, timezone, timedelta
 import asyncio
+import json
 from dotenv import load_dotenv
 
 # Load environment variables explicitly from the current directory's .env file
@@ -28,39 +29,63 @@ async def fetch_commit_count(client: httpx.AsyncClient, handle: str, headers: di
     except Exception:
         return 0
 
-async def calculate_pow_score(github_handle: str) -> dict:
+async def _call_ollama_generate(prompt: str) -> dict:
+    """Calls local Ollama Llama 3.2 to generate a JSON response with a strict 30s timeout."""
+    url = "http://localhost:11434/api/generate"
+    payload = {
+        "model": "llama3.2",
+        "prompt": prompt,
+        "stream": False,
+        "format": "json"
+    }
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            res = await client.post(url, json=payload)
+            if res.status_code == 200:
+                data = res.json()
+                return json.loads(data.get("response", "{}"))
+    except Exception as e:
+        print(f"Ollama Error: {e}")
+    return {}
+
+async def calculate_pow_score(github_handle: str, job_description: str) -> dict:
     """
-    Calculates a GitHub Proof-of-Work score based on velocity and quality.
+    Calculates a hybrid GitHub Proof-of-Work score based on 4 pillars:
+    1. Velocity (25%)
+    2. Quality (35%)
+    3. Commit Depth (25%) - LLM
+    4. Relevance (15%) - LLM
     """
+    default_return = {
+        "pow_score": 0.0,
+        "velocity_component": 0.0,
+        "quality_component": 0.0,
+        "commit_depth_score": 0.0,
+        "relevance_component": 0.0,
+        "burst_triggered": False,
+        "burst_flag": False,
+        "pow_data_unavailable": True,
+        "low_sample_confidence": False,
+        "llm_fallback": False,
+        "matched_skills": [],
+        "reasoning": {}
+    }
+
     if not github_handle:
-        return {
-            "pow_score": 0.0,
-            "velocity_component": 0.0,
-            "quality_component": 0.0,
-            "burst_triggered": False,
-            "burst_flag": False,
-            "pow_data_unavailable": True
-        }
+        return default_return
 
     github_token = os.getenv("GITHUB_PAT", os.getenv("GITHUB_TOKEN", ""))
     headers = {"Accept": "application/vnd.github.v3+json"}
     if github_token:
         headers["Authorization"] = f"Bearer {github_token}"
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        # 1. Fetch User Data to get created_at
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        # 1. Fetch User Data
         user_url = f"https://api.github.com/users/{github_handle}"
         user_res = await client.get(user_url, headers=headers)
         
         if user_res.status_code != 200:
-            return {
-                "pow_score": 0.0,
-                "velocity_component": 0.0,
-                "quality_component": 0.0,
-                "burst_triggered": False,
-                "burst_flag": False,
-                "pow_data_unavailable": True
-            }
+            return default_return
             
         user_data = user_res.json()
         created_at_str = user_data.get("created_at")
@@ -72,15 +97,12 @@ async def calculate_pow_score(github_handle: str) -> dict:
         now_dt = datetime.now(timezone.utc)
         account_age_days = max(1, (now_dt - created_at_dt).days)
         account_age_months = account_age_days / 30.0
-
-        # Edge Case: Under 6 months
         under_6_months = account_age_months < 6.0
 
         # 2. Fetch Velocity Data via Search Commits
         date_30d = (now_dt - timedelta(days=30)).strftime("%Y-%m-%d")
         date_90d = (now_dt - timedelta(days=90)).strftime("%Y-%m-%d")
 
-        # Run velocity API calls concurrently
         commits_all_time, commits_90d, commits_30d = await asyncio.gather(
             fetch_commit_count(client, github_handle, headers),
             fetch_commit_count(client, github_handle, headers, date_90d),
@@ -88,21 +110,17 @@ async def calculate_pow_score(github_handle: str) -> dict:
         )
 
         # Velocity Component Math
-        # Historical average per 90 days
         commits_per_90d_historical_avg = (commits_all_time / account_age_days) * 90 if account_age_days > 0 else 0
-
-        # Burst Multiplier Logic
         burst_multiplier = 1.0
         burst_triggered = False
         burst_flag = False
 
         if not under_6_months and account_age_months > 0:
             personal_monthly_mean = commits_all_time / account_age_months
-            # Poisson standard deviation approximation
             std_dev = math.sqrt(personal_monthly_mean)
             burst_threshold = personal_monthly_mean + (2 * std_dev)
 
-            if commits_30d > burst_threshold and commits_30d > 10:  # Require at least 10 commits to trigger burst
+            if commits_30d > burst_threshold and commits_30d > 10:
                 burst_multiplier = 1.3
                 burst_triggered = True
                 burst_flag = True
@@ -110,59 +128,130 @@ async def calculate_pow_score(github_handle: str) -> dict:
         raw_velocity_ratio = commits_90d / max(commits_per_90d_historical_avg, 1)
         velocity_component = min(raw_velocity_ratio, 5.0) * burst_multiplier
 
-        # 3. Quality Component Math
+        # 3. Quality Component Math (Top 5 repos)
         repos_url = f"https://api.github.com/users/{github_handle}/repos?sort=updated&per_page=100"
         repos_res = await client.get(repos_url, headers=headers)
         
         quality_component = 0.0
+        valid_repos = []
         
         if repos_res.status_code == 200:
             repos_data = repos_res.json()
-            # Filter to public non-fork repos (or forks if we want to include them, but usually primary contributions are better)
-            # Edge Case: Private repositories are skipped inherently by public REST API
             valid_repos = [r for r in repos_data if not r.get("private", False) and not r.get("fork", False)]
-            
-            # Sort by impact (stars + forks)
             valid_repos.sort(key=lambda x: x.get("stargazers_count", 0) + x.get("forks_count", 0), reverse=True)
-            top_5_repos = valid_repos[:5]
             
+            top_5_repos = valid_repos[:5]
             total_stars = sum(r.get("stargazers_count", 0) for r in top_5_repos)
             total_forks = sum(r.get("forks_count", 0) for r in top_5_repos)
             
-            # Fetch PR counts concurrently for top 5 repos
-            pr_counts = [0] * len(top_5_repos)
-            if top_5_repos:
-                async def fetch_pr_count(repo_name):
-                    # Search PRs created by others against this repo
-                    pr_query = f"repo:{repo_name} is:pr -author:{github_handle}"
-                    pr_url = f"https://api.github.com/search/issues?q={pr_query}"
-                    try:
-                        res = await client.get(pr_url, headers=headers)
-                        if res.status_code == 200:
-                            return res.json().get("total_count", 0)
-                    except:
-                        pass
-                    return 0
+            pr_tasks = []
+            async def fetch_pr_count(repo_name):
+                pr_query = f"repo:{repo_name} is:pr -author:{github_handle}"
+                pr_url = f"https://api.github.com/search/issues?q={pr_query}"
+                try:
+                    res = await client.get(pr_url, headers=headers)
+                    if res.status_code == 200:
+                        return res.json().get("total_count", 0)
+                except:
+                    pass
+                return 0
 
-                pr_tasks = [fetch_pr_count(r["full_name"]) for r in top_5_repos]
+            pr_tasks = [fetch_pr_count(r["full_name"]) for r in top_5_repos]
+            if pr_tasks:
                 pr_results = await asyncio.gather(*pr_tasks)
                 total_prs = sum(pr_results)
             else:
                 total_prs = 0
 
             composite_impact = total_stars + total_forks + total_prs
-            
-            # Logarithmic Normalization (capped at 500 impact = 1.0)
             if composite_impact > 0:
                 quality_component = min(1.0, math.log10(composite_impact + 1) / math.log10(500))
 
-        # 4. Final Math
-        # Normalize velocity from a 0-6.5 scale down to a 0-1.0 scale
+        # 4. LLM Components (Commit Depth & Relevance)
+        top_3_repos = valid_repos[:3] if valid_repos else []
+        repo_languages = set()
+        repo_topics = set()
+        
+        for r in top_3_repos:
+            if r.get("language"):
+                repo_languages.add(r["language"])
+            if r.get("topics"):
+                repo_topics.update(r["topics"])
+                
+        # Extract commits from Top 3 Repos
+        commit_messages = []
+        for r in top_3_repos:
+            commits_url = f"https://api.github.com/repos/{github_handle}/{r['name']}/commits?author={github_handle}&per_page=5"
+            try:
+                c_res = await client.get(commits_url, headers=headers)
+                if c_res.status_code == 200:
+                    for c in c_res.json():
+                        msg = c.get("commit", {}).get("message", "")
+                        if msg:
+                            commit_messages.append(f"Repo: {r['name']} | Msg: {msg}")
+            except Exception:
+                pass
+                
+        low_sample_confidence = len(commit_messages) < 10
+        llm_fallback = False
+        commit_depth_score_10 = 5.0
+        relevance_score_10 = 5.0
+        matched_skills = []
+        reasoning_dict = {}
+
+        if commit_messages or (repo_languages or repo_topics):
+            commits_text = "\n".join(commit_messages[:15]) if commit_messages else "No commits available."
+            prompt_depth = f"""Analyze the following Git commit messages authored by a candidate.
+Evaluate the specificity, technical depth, and context richness.
+Score them from 0 to 10 (10 being highly detailed and technically complex).
+Output STRICT JSON exactly matching this format: {{"commit_depth_score": 8.5, "reasoning": "string"}}
+Commits:
+{commits_text}"""
+            
+            tech_stack = f"Languages: {', '.join(repo_languages)}\nTopics: {', '.join(repo_topics)}"
+            prompt_rel = f"""Evaluate the relevance of a candidate's GitHub technical stack against a job description.
+Score from 0 to 10 (10 being a perfect match).
+Output STRICT JSON exactly matching this format: {{"relevance_score": 8.0, "matched_skills": ["skill1"], "reasoning": "string"}}
+Job Description:
+{job_description}
+Candidate Stack:
+{tech_stack}"""
+
+            depth_res, rel_res = await asyncio.gather(
+                _call_ollama_generate(prompt_depth),
+                _call_ollama_generate(prompt_rel)
+            )
+            
+            if not depth_res or not rel_res:
+                llm_fallback = True
+
+            commit_depth_score_10 = float(depth_res.get("commit_depth_score", 5.0))
+            reasoning_dict["commit_depth"] = depth_res.get("reasoning", "LLM timeout or missing data.")
+            
+            relevance_score_10 = float(rel_res.get("relevance_score", 5.0))
+            matched_skills = rel_res.get("matched_skills", [])
+            reasoning_dict["relevance"] = rel_res.get("reasoning", "LLM timeout or missing data.")
+        else:
+            low_sample_confidence = True
+            llm_fallback = True
+            reasoning_dict["commit_depth"] = "No repository data found to analyze."
+            reasoning_dict["relevance"] = "No repository data found to analyze."
+
+        # 5. Final Master Formula
+        # Normalize velocity to 0-1.0 scale
         max_possible_velocity = 5.0 * 1.3
-        normalized_velocity = velocity_component / max_possible_velocity
+        normalized_velocity = min(1.0, velocity_component / max_possible_velocity)
+        
+        # Normalize LLM scores to 0-1.0 scale
+        normalized_commit_depth = min(1.0, commit_depth_score_10 / 10.0)
+        normalized_relevance = min(1.0, relevance_score_10 / 10.0)
         
         # Calculate true weighted pow score (0 to 1.0)
-        raw_pow_score = (normalized_velocity * 0.65) + (quality_component * 0.35)
+        # Weights: Velocity (0.25), Quality (0.35), Commit Depth (0.25), Relevance (0.15)
+        raw_pow_score = (normalized_velocity * 0.25) + \
+                        (quality_component * 0.35) + \
+                        (normalized_commit_depth * 0.25) + \
+                        (normalized_relevance * 0.15)
         
         pow_score_100 = raw_pow_score * 100.0
         
@@ -170,9 +259,15 @@ async def calculate_pow_score(github_handle: str) -> dict:
             "pow_score": round(min(100.0, max(0.0, pow_score_100)), 2),
             "velocity_component": round(velocity_component, 4),
             "quality_component": round(quality_component, 4),
+            "commit_depth_score": round(commit_depth_score_10, 4),
+            "relevance_component": round(relevance_score_10, 4),
             "burst_triggered": burst_triggered,
             "burst_flag": burst_flag,
-            "pow_data_unavailable": False
+            "pow_data_unavailable": False,
+            "low_sample_confidence": low_sample_confidence,
+            "llm_fallback": llm_fallback,
+            "matched_skills": matched_skills,
+            "reasoning": reasoning_dict
         }
 
 # For simple testing when running this file directly
@@ -180,8 +275,9 @@ if __name__ == "__main__":
     import sys
     async def main():
         handle = sys.argv[1] if len(sys.argv) > 1 else "torvalds"
-        print(f"Scoring {handle}...")
-        res = await calculate_pow_score(handle)
-        print(res)
+        jd = "We are looking for a C/C++ Linux kernel developer with systems programming experience."
+        print(f"Scoring {handle} against JD...")
+        res = await calculate_pow_score(handle, jd)
+        print(json.dumps(res, indent=2))
         
     asyncio.run(main())
