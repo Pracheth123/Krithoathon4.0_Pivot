@@ -1,5 +1,5 @@
 // Central API client — all fetch calls in one place
-const BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 let globalToken = null;
 
 export function setToken(token) {
@@ -13,13 +13,13 @@ function getHeaders(extraHeaders = {}) {
 }
 
 export async function healthCheck() {
-  const res = await fetch(`${BASE_URL}/health`, { signal: AbortSignal.timeout(4000) });
+  const res = await fetch(`${API_BASE_URL}/health`, { signal: AbortSignal.timeout(4000) });
   if (!res.ok) throw new Error('offline');
   return res.json();
 }
 
 export async function loginUser(username, password) {
-  const res = await fetch(`${BASE_URL}/login`, {
+  const res = await fetch(`${API_BASE_URL}/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password })
@@ -32,7 +32,7 @@ export async function loginUser(username, password) {
 }
 
 export async function registerUser(username, password) {
-  const res = await fetch(`${BASE_URL}/register`, {
+  const res = await fetch(`${API_BASE_URL}/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password })
@@ -47,7 +47,7 @@ export async function registerUser(username, password) {
 export async function parseResume(file) {
   const form = new FormData();
   form.append('file', file);
-  const res = await fetch(`${BASE_URL}/parse-resume`, { 
+  const res = await fetch(`${API_BASE_URL}/parse-resume`, { 
     method: 'POST', 
     headers: getHeaders(),
     body: form 
@@ -60,7 +60,7 @@ export async function parseResume(file) {
 }
 
 export async function embedStore(candidateId, sanitizedText) {
-  const res = await fetch(`${BASE_URL}/embed-store`, {
+  const res = await fetch(`${API_BASE_URL}/embed-store`, {
     method: 'POST',
     headers: getHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ candidate_id: candidateId, sanitized_text: sanitizedText, metadata: {} }),
@@ -73,7 +73,7 @@ export async function embedStore(candidateId, sanitizedText) {
 }
 
 export async function evaluateCandidate(candidateId, jobDescription, powData) {
-  const res = await fetch(`${BASE_URL}/evaluate-candidate`, {
+  const res = await fetch(`${API_BASE_URL}/evaluate-candidate`, {
     method: 'POST',
     headers: getHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ candidate_id: candidateId, job_description: jobDescription, pow_data: powData || {} }),
