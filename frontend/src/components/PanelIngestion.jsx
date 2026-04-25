@@ -8,6 +8,8 @@ export default function PanelIngestion({ onIngestSuccess }) {
     { id: 1, text: "Ingestion engine ready.", type: "success" }
   ]);
   const fileInputRef = useRef(null);
+  
+  const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
   const processFile = async (file) => {
     if (!file) return;
@@ -17,8 +19,9 @@ export default function PanelIngestion({ onIngestSuccess }) {
     formData.append("file", file);
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/parse-resume", {
+      const response = await fetch(`${API_BASE}/parse-resume`, {
         method: "POST",
+        headers: { "ngrok-skip-browser-warning": "69420" },
         body: formData,
       });
 
@@ -40,9 +43,12 @@ export default function PanelIngestion({ onIngestSuccess }) {
       const generatedCandidateId = data.candidate_id || `C-${Date.now()}`;
       
       // Actually call /embed-store
-      const embedResponse = await fetch("http://127.0.0.1:8000/embed-store", {
+      const embedResponse = await fetch(`${API_BASE}/embed-store`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "69420"
+        },
         body: JSON.stringify({
           candidate_id: generatedCandidateId,
           sanitized_text: data.sanitized_text,
