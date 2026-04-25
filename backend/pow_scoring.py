@@ -157,12 +157,14 @@ async def calculate_pow_score(github_handle: str) -> dict:
                 quality_component = min(1.0, math.log10(composite_impact + 1) / math.log10(500))
 
         # 4. Final Math
-        # Calculate raw pow score
-        raw_pow_score = (velocity_component * 0.65) + (quality_component * 0.35)
+        # Normalize velocity from a 0-6.5 scale down to a 0-1.0 scale
+        max_possible_velocity = 5.0 * 1.3
+        normalized_velocity = velocity_component / max_possible_velocity
         
-        # Normalize to 0-100 scale. Max possible score = (5.0 * 1.3 * 0.65) + (1.0 * 0.35) = 4.225 + 0.35 = 4.575
-        max_possible = (5.0 * 1.3 * 0.65) + (1.0 * 0.35)
-        pow_score_100 = (raw_pow_score / max_possible) * 100.0
+        # Calculate true weighted pow score (0 to 1.0)
+        raw_pow_score = (normalized_velocity * 0.65) + (quality_component * 0.35)
+        
+        pow_score_100 = raw_pow_score * 100.0
         
         return {
             "pow_score": round(min(100.0, max(0.0, pow_score_100)), 2),
