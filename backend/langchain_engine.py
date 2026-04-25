@@ -89,7 +89,7 @@ def embed_document(candidate_id: str, text: str, metadata: Dict[str, Any] = None
         ids=ids
     )
 
-def evaluate_candidate(candidate_id: str, job_description: str, pow_data: Dict[str, Any], role_context: str = "", pow_results: Dict[str, Any] = None) -> Dict[str, Any]:
+async def evaluate_candidate(candidate_id: str, job_description: str, pow_data: Dict[str, Any], role_context: str = "", pow_results: Dict[str, Any] = None) -> Dict[str, Any]:
     """
     Evaluates a candidate using deterministic Vector Search mathematical similarities.
     Uses Llama 3.2 purely to generate a strict, 2-sentence Traceability Report based on the math.
@@ -158,8 +158,9 @@ Traceability Report:"""
     xai_explanation = ""
     try:
         import httpx
-        with httpx.Client(timeout=30.0) as client:
-            res = client.post("http://localhost:11434/api/generate", json={
+        # Use async client — this runs inside asyncio.to_thread so it must not block
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            res = await client.post("http://localhost:11434/api/generate", json={
                 "model": "llama3.2",
                 "prompt": prompt,
                 "stream": False
@@ -172,6 +173,7 @@ Traceability Report:"""
         
     if not xai_explanation:
         xai_explanation = f"Mathematical scan completed. Semantic match: {round(similarity*100)}%. Missing terms: {', '.join(missing_key_terms)}."
+
 
     # 5. Compile Final Payload
     pow_score = 0.0

@@ -237,7 +237,7 @@ Sterilized Output:"""
     
     try:
         import httpx
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=20.0) as client:
             res = await client.post(url, json=payload)
             if res.status_code == 200:
                 data = res.json()
@@ -378,21 +378,46 @@ async def evaluate_candidate_endpoint(request: EvaluateRequest, current_user: st
             if row:
                 role_context = f"Role Title: {row[0]}\nRole Context: {row[1]}"
 
-        # Calculate Advanced GitHub PoW math
+        # Run PoW scoring and ChromaDB vector evaluation CONCURRENTLY for max speed
         pow_results = None
+        pow_task = None
         if active_pow_data.get("github_user"):
             from pow_scoring import calculate_pow_score
-            pow_results = await calculate_pow_score(active_pow_data.get("github_user"), request.job_description)
+            pow_task = calculate_pow_score(active_pow_data.get("github_user"), request.job_description)
 
-        # 1. Run blocking LLM evaluation
-        llm_evaluation = await asyncio.to_thread(
-            evaluate_candidate, 
-            request.candidate_id, 
-            request.job_description, 
-            active_pow_data,
-            role_context,
-            pow_results
-        )
+        if pow_task:
+            # Run GitHub PoW + LLM evaluation simultaneously
+            pow_results, llm_evaluation = await asyncio.gather(
+                pow_task,
+                evaluate_candidate(
+                    request.candidate_id,
+                    request.job_description,
+                    active_pow_data,
+                    role_context,
+                    None  # pow_results not available yet, will override below
+                )
+            )
+            # Override PoW score with actual result now that it's computed
+            if pow_results and not pow_results.get("pow_data_unavailable", True):
+                pow_score = round(pow_results.get("pow_score", 0.0) * 0.30, 2)
+                llm_evaluation["pow_depth_score_30"] = pow_score
+                llm_evaluation["total_score"] = round(
+                    llm_evaluation.get("semantic_skill_score_40", 0) +
+                    pow_score +
+                    llm_evaluation.get("experience_score_15", 0) +
+                    llm_evaluation.get("keyword_score_15", 0),
+                    2
+                )
+        else:
+            # No GitHub URL — just run LLM evaluation
+            llm_evaluation = await evaluate_candidate(
+                request.candidate_id,
+                request.job_description,
+                active_pow_data,
+                role_context,
+                None
+            )
+
 
         print("\n=== RAW LLM OUTPUT ===")
         print(llm_evaluation)
