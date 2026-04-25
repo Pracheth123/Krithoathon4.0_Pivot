@@ -1,6 +1,8 @@
 import io
 import re
 import os
+import unicodedata
+import os
 from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -52,17 +54,18 @@ def extract_text_from_pdf(file_content: bytes) -> str:
             page_text = page.extract_text()
             if page_text:
                 text += page_text + "\n"
-        # Scrub unprintable characters that might confuse the tokenizer
-        return re.sub(r'[^\x00-\x7F]+', ' ', text)
+        # Allow all unicode, just strip control characters except newline
+        return "".join(ch for ch in text if unicodedata.category(ch)[0] != "C" or ch == '\n')
     except Exception as e:
         raise ValueError(f"Failed to extract text from PDF: {str(e)}")
 
 def extract_text_from_docx(file_content: bytes) -> str:
     """Extracts text from a Word document using python-docx."""
     try:
+        import unicodedata
         doc = docx.Document(io.BytesIO(file_content))
         text = "\n".join([para.text for para in doc.paragraphs])
-        return re.sub(r'[^\x00-\x7F]+', ' ', text)
+        return "".join(ch for ch in text if unicodedata.category(ch)[0] != "C" or ch == '\n')
     except Exception as e:
         raise ValueError(f"Failed to extract text from DOCX: {str(e)}")
 
