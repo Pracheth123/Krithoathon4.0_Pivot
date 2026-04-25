@@ -81,10 +81,9 @@ def extract_text_from_docx(file_content: bytes) -> str:
     except Exception as e:
         raise ValueError(f"Failed to extract text from DOCX: {str(e)}")
 
-def extract_github_url(text: str) -> str | None:
+def extract_github_url(text: str) -> Optional[str]:
     """Extracts the first GitHub profile URL found in the text."""
-    github_pattern = r"(?:https?://)?(?:www\.)?github\.com/[a-zA-Z0-9-]+"
-    match = re.search(github_pattern, text, re.IGNORECASE)
+    match = re.search(r'(?:https?://)?(?:www\.)?github\.com/[a-zA-Z0-9_-]+', text, re.IGNORECASE)
     if match:
         return match.group(0)
     return None
