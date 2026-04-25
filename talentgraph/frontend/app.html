@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TalentGraph AI — Candidate Evaluation</title>
+  <meta name="description" content="Upload a resume, add a job description, and get an instant AI-powered candidate evaluation with skill gap analysis and knowledge graph." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js" defer></script>
+  <script src="app.js" defer></script>
+
+  <style>
+    .app-layout {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem 6rem;
+    }
+    /* Score ring colours driven by JS */
+    .final-score-section {
+      text-align: center;
+      padding: 3rem 2rem;
+    }
+    .final-score-number {
+      font-family: 'Outfit', sans-serif;
+      font-size: 4rem;
+      font-weight: 900;
+      line-height: 1;
+      letter-spacing: -2px;
+    }
+    .final-score-label {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-top: 0.25rem;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+    .candidate-id-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      background: var(--bg-glass);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-sm);
+      padding: 0.6rem 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .candidate-id-label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+    }
+    .candidate-id-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9rem;
+      color: var(--accent-primary);
+      font-weight: 600;
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+    }
+    .phase-content { animation: fadeInUp 0.4s ease; }
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .result-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 2rem;
+    }
+    .tcfe-full-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1rem;
+    }
+    .tcfe-gauge-row {
+      display: flex;
+      gap: 2rem;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-bottom: 1.5rem;
+    }
+    .mini-gauge-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .mini-gauge-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── TOAST CONTAINER ───────────────────────────────────────── -->
+<div id="toast-container"></div>
+
+<!-- ── NAVBAR ───────────────────────────────────────────────── -->
+<nav class="navbar">
+  <a href="index.html" class="nav-logo">⬡ TalentGraph AI</a>
+  <div class="flex items-center gap-2">
+    <div class="status-indicator status-offline" id="system-status">
+      <span class="status-dot"></span>
+      <span id="status-text">Checking…</span>
+    </div>
+    <a href="index.html" class="btn btn-ghost btn-sm">← Home</a>
+  </div>
+</nav>
+
+<!-- ── MAIN APP ──────────────────────────────────────────────── -->
+<main class="app-layout">
+
+  <!-- Phase Stepper -->
+  <div class="phase-stepper" id="phase-stepper">
+    <div class="step-item active" id="step-1">
+      <div class="step-circle">1</div>
+      <div class="step-label">Upload Resume</div>
+    </div>
+    <div class="step-connector" id="connector-1"></div>
+    <div class="step-item" id="step-2">
+      <div class="step-circle">2</div>
+      <div class="step-label">Job Description</div>
+    </div>
+    <div class="step-connector" id="connector-2"></div>
+    <div class="step-item" id="step-3">
+      <div class="step-circle">3</div>
+      <div class="step-label">AI Report</div>
+    </div>
+  </div>
+
+  <!-- ━━━━━━━━ PHASE 1: Upload ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+  <div id="phase-1-content" class="phase-content">
+
+    <!-- Candidate ID Bar -->
+    <div class="candidate-id-bar">
+      <span class="candidate-id-label">Candidate ID</span>
+      <input class="candidate-id-value" id="candidate-id-input" type="text" spellcheck="false" />
+      <button class="btn btn-sm btn-ghost" onclick="regenerateCandidateId()" title="Generate new ID">↻</button>
+    </div>
+
+    <!-- Drop Zone -->
+    <div class="glass-card no-hover" style="padding: 1.5rem;">
+      <div class="section-header">
+        <div class="section-icon">📄</div>
+        <div>
+          <div class="section-title">Upload PDF Resume</div>
+          <div class="section-sub">Supports single-page and multi-page PDFs</div>
+        </div>
+      </div>
+
+      <div class="drop-zone" id="drop-zone">
+        <input type="file" id="resume-file-input" accept=".pdf" />
+        <span class="drop-zone-icon">☁️</span>
+        <div class="drop-zone-title">Drag &amp; Drop PDF here</div>
+        <div class="drop-zone-sub">or <span style="color: var(--accent-primary); font-weight: 600;">click to browse</span> — PDF only, max 10MB</div>
+      </div>
+
+      <div class="file-selected-info hidden" id="file-info">
+        <span class="file-icon">📎</span>
+        <div>
+          <div class="file-name" id="file-name-display"></div>
+          <div class="file-size" id="file-size-display"></div>
+        </div>
+        <button class="btn btn-sm btn-ghost" style="margin-left: auto;" onclick="clearFile()">✕ Clear</button>
+      </div>
+
+      <div style="margin-top: 1.5rem; display: flex; gap: 1rem; align-items: center;">
+        <button class="btn btn-primary btn-lg" id="parse-btn" onclick="uploadResume()" disabled>
+          Parse Resume
+        </button>
+        <span id="parse-spinner" class="spinner hidden"></span>
+        <span id="parse-status-text" style="font-size: 0.85rem; color: var(--text-secondary);"></span>
+      </div>
+    </div>
+
+    <!-- Parse Result (shown after success) -->
+    <div id="parse-result" class="glass-card no-hover hidden" style="margin-top: 1.5rem;">
+      <div class="result-header-row">
+        <div>
+          <h3 style="font-family: 'Outfit'; font-size: 1.2rem; font-weight: 700; margin-bottom: 0.25rem;">Parse Complete</h3>
+          <p style="font-size: 0.85rem; color: var(--text-secondary);" id="parse-message"></p>
+        </div>
+        <div id="role-badge"></div>
+      </div>
+
+      <!-- GitHub URL -->
+      <div id="github-section" style="margin-bottom: 1.5rem;">
+        <span style="font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); display: block; margin-bottom: 0.5rem;">GitHub Detected</span>
+        <div id="github-display" style="font-family: 'JetBrains Mono', monospace; font-size: 0.875rem;"></div>
+      </div>
+
+      <!-- TCFE Metrics -->
+      <div id="tcfe-section" class="hidden">
+        <div class="section-header" style="margin-bottom: 1rem;">
+          <div class="section-icon">⚡</div>
+          <div>
+            <div class="section-title">TCFE Metrics</div>
+            <div class="section-sub">Temporal Commit Flow Engine</div>
+          </div>
+        </div>
+
+        <div class="tcfe-gauge-row">
+          <div class="mini-gauge-wrap">
+            <svg id="gauge-continuity" width="100" height="100" viewBox="0 0 100 100"></svg>
+            <div class="mini-gauge-label">Continuity</div>
+          </div>
+          <div class="mini-gauge-wrap">
+            <svg id="gauge-burst" width="100" height="100" viewBox="0 0 100 100"></svg>
+            <div class="mini-gauge-label">Burst Score</div>
+          </div>
+          <div class="mini-gauge-wrap">
+            <svg id="gauge-quality" width="100" height="100" viewBox="0 0 100 100"></svg>
+            <div class="mini-gauge-label">Quality ×</div>
+          </div>
+        </div>
+
+        <div class="tcfe-full-grid">
+          <div class="tcfe-item">
+            <div class="tcfe-label">Burst Detected</div>
+            <div id="tcfe-burst-badge"></div>
+          </div>
+          <div class="tcfe-item">
+            <div class="tcfe-label">Bot Behavior</div>
+            <div id="tcfe-bot-badge"></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top: 2rem; display: flex; justify-content: flex-end;">
+        <button class="btn btn-primary" onclick="proceedToPhase2()">
+          Continue to Evaluation →
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ━━━━━━━━ PHASE 2: Job Description ━━━━━━━━━━━━━━━━━━━━━━━ -->
+  <div id="phase-2-content" class="phase-content hidden">
+    <div class="glass-card no-hover">
+      <div class="section-header">
+        <div class="section-icon">📝</div>
+        <div>
+          <div class="section-title">Job Description</div>
+          <div class="section-sub">Paste the full JD to evaluate against</div>
+        </div>
+      </div>
+
+      <!-- Candidate ID readonly -->
+      <div class="candidate-id-bar" style="margin-bottom: 1.25rem;">
+        <span class="candidate-id-label">Candidate</span>
+        <span class="candidate-id-value" id="phase2-cand-id" style="cursor: default;"></span>
+      </div>
+
+      <textarea
+        class="form-textarea"
+        id="job-description"
+        placeholder="Paste the job description here…
+
+Example:
+We are looking for a Senior Backend Engineer proficient in Python, FastAPI, Docker, and Kubernetes. Experience with PostgreSQL, Redis, and AWS is required. Knowledge of LangChain, vector databases (Pinecone / ChromaDB), and LLM fine-tuning is a strong plus."
+      ></textarea>
+
+      <div style="margin-top: 1.5rem; display: flex; gap: 1rem; align-items: center; justify-content: space-between; flex-wrap: wrap;">
+        <button class="btn btn-ghost" onclick="backToPhase1()">← Back</button>
+        <div style="display: flex; gap: 1rem; align-items: center;">
+          <span id="eval-spinner" class="spinner hidden"></span>
+          <span id="eval-status-text" style="font-size: 0.85rem; color: var(--text-secondary);"></span>
+          <button class="btn btn-primary btn-lg" id="evaluate-btn" onclick="runEvaluation()">
+            Run AI Evaluation ✦
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ━━━━━━━━ PHASE 3: Results Dashboard ━━━━━━━━━━━━━━━━━━━━━ -->
+  <div id="phase-3-content" class="phase-content hidden">
+
+    <!-- Header -->
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
+      <div>
+        <h2 style="font-family: 'Outfit'; font-size: 1.75rem; font-weight: 800; letter-spacing: -0.5px;">AI Matching Report</h2>
+        <div style="font-family: 'JetBrains Mono'; font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;" id="result-cand-id-label"></div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="resetApp()">↺ New Evaluation</button>
+    </div>
+
+    <!-- Final Score Hero -->
+    <div class="glass-card no-hover" style="margin-bottom: 1.5rem; padding: 0;">
+      <div class="final-score-section">
+        <svg id="main-gauge" width="180" height="180" viewBox="0 0 180 180" style="display: block; margin: 0 auto 1.25rem;"></svg>
+        <div class="final-score-number" id="final-score-number">—</div>
+        <div class="final-score-label">Final Weighted Score</div>
+        <div style="margin-top: 1rem; display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap;">
+          <span id="velocity-badge" class="badge"></span>
+          <span id="velocity-multiplier" class="badge badge-blue"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Score Breakdown -->
+    <div class="glass-card no-hover" style="margin-bottom: 1.5rem;">
+      <div class="section-header">
+        <div class="section-icon">📊</div>
+        <div>
+          <div class="section-title">Score Breakdown</div>
+          <div class="section-sub">Four-component LLM evaluation</div>
+        </div>
+      </div>
+      <div class="score-cards-grid" id="score-breakdown-grid"></div>
+    </div>
+
+    <!-- XAI Explanation -->
+    <div class="glass-card no-hover" style="margin-bottom: 1.5rem;">
+      <div class="section-header">
+        <div class="section-icon">🔍</div>
+        <div>
+          <div class="section-title">XAI Explanation</div>
+          <div class="section-sub">Explainable AI reasoning</div>
+        </div>
+      </div>
+      <div class="xai-card">
+        <div class="xai-text" id="xai-text"></div>
+      </div>
+    </div>
+
+    <!-- Gap Analysis -->
+    <div class="glass-card no-hover" style="margin-bottom: 1.5rem;">
+      <div class="section-header">
+        <div class="section-icon">🎯</div>
+        <div>
+          <div class="section-title">Skill Gap Analysis</div>
+          <div class="section-sub">Set-theoretic skill coverage</div>
+        </div>
+      </div>
+
+      <!-- Coverage bar -->
+      <div class="coverage-wrap">
+        <span class="coverage-label">JD Coverage</span>
+        <div class="progress-bar-wrapper" style="flex: 1;">
+          <div class="progress-bar-fill" id="coverage-bar" style="width: 0%;"></div>
+        </div>
+        <span class="coverage-pct" id="coverage-pct-label">0%</span>
+      </div>
+
+      <div class="gap-grid">
+        <div>
+          <div class="gap-col-title" style="color: var(--accent-green);">✅ Matched Skills</div>
+          <div class="tags-container" id="gap-overlaps"></div>
+        </div>
+        <div>
+          <div class="gap-col-title" style="color: var(--accent-red);">❌ Skill Gaps</div>
+          <div class="tags-container" id="gap-gaps"></div>
+        </div>
+        <div>
+          <div class="gap-col-title" style="color: var(--accent-blue-lt);">➕ Extra Skills</div>
+          <div class="tags-container" id="gap-extras"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- D3 Knowledge Graph -->
+    <div class="glass-card no-hover" style="margin-bottom: 1.5rem;">
+      <div class="section-header">
+        <div class="section-icon">🕸️</div>
+        <div>
+          <div class="section-title">Skill Knowledge Graph</div>
+          <div class="section-sub">D3.js force-directed topology — drag to explore</div>
+        </div>
+      </div>
+      <div id="graph-container">
+        <svg id="d3-graph"></svg>
+      </div>
+      <div class="graph-legend" id="graph-legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#38bdf8;box-shadow:0 0 6px #38bdf8;"></div> Central Node</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#34d399;box-shadow:0 0 6px #34d399;"></div> Matched Skill</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#7dd3fc;"></div> Candidate Only</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#f87171;box-shadow:0 0 6px #f87171;"></div> Gap (JD Only)</div>
+      </div>
+    </div>
+
+  </div>
+  <!-- /phase-3 -->
+
+</main>
+
+</body>
+</html>

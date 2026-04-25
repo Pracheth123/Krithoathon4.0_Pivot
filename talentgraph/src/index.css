@@ -1,0 +1,75 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+/* ── Variables ─────────────────────────────────────────────── */
+:root {
+  /* HireLens brand palette — bright yellow & light */
+  --bg-primary:    #FFFBF0;       /* warm cream white */
+  --bg-secondary:  #FFF8E6;       /* soft warm yellow-white */
+  --bg-tertiary:   #FEF3C7;       /* light amber */
+  --bg-card:       rgba(255,255,255,0.95);
+  --bg-glass:      rgba(255,255,255,0.7);
+  --bg-glass-hover:rgba(255,255,255,0.9);
+
+  --border-glass:  rgba(245,158,11,0.2);
+  --border-strong: rgba(217,119,6,0.4);
+
+  /* Golden yellow primary */
+  --accent-primary: #F59E0B;   /* amber-400 */
+  --accent-deep:    #D97706;   /* amber-600 */
+  --accent-bright:  #FCD34D;   /* amber-300 */
+  --accent-glow:    rgba(245,158,11,0.25);
+  --accent-glow-lg: rgba(245,158,11,0.12);
+
+  /* Supporting colors — warm & vibrant */
+  --accent-green:   #059669;   /* emerald */
+  --accent-red:     #DC2626;   /* red */
+  --accent-blue:    #3B82F6;   /* blue */
+  --accent-purple:  #7C3AED;   /* violet */
+  --accent-orange:  #EA580C;   /* orange */
+  --accent-pink:    #EC4899;   /* pink */
+
+  --text-primary:   #1C1917;   /* warm black */
+  --text-secondary: #57534E;   /* warm gray */
+  --text-muted:     #A8A29E;   /* light warm gray */
+  --text-on-accent: #FFFFFF;   /* white on yellow */
+
+  --radius-sm:8px; --radius-md:12px; --radius-lg:16px;
+  --radius-xl:24px; --radius-pill:9999px;
+  --shadow-card:0 2px 20px rgba(0,0,0,0.08);
+  --shadow-hover:0 8px 40px rgba(0,0,0,0.14),0 0 0 1px rgba(245,158,11,0.15);
+  --shadow-yellow:0 4px 24px rgba(245,158,11,0.35);
+  --transition:all 0.25s cubic-bezier(0.4,0,0.2,1);
+}
+
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  background:var(--bg-primary);
+  color:var(--text-primary);
+  font-family:'Inter',sans-serif;
+  line-height:1.6;
+  min-height:100vh;
+  overflow-x:hidden;
+}
+h1,h2,h3,h4{font-family:'Outfit',sans-serif;font-weight:700;line-height:1.2;}
+a{color:var(--accent-deep);text-decoration:none;}
+::-webkit-scrollbar{width:6px;}
+::-webkit-scrollbar-track{background:var(--bg-secondary);}
+::-webkit-scrollbar-thumb{background:var(--accent-bright);border-radius:99px;}
+
+/* ── Keyframes ─────────────────────────────────────────────── */
+@keyframes pulse-yellow{
+  0%,100%{opacity:1;box-shadow:0 0 8px var(--accent-primary);}
+  50%{opacity:0.7;box-shadow:0 0 16px var(--accent-primary);}
+}
+@keyframes spin{to{transform:rotate(360deg);}}
+@keyframes slideInRight{from{transform:translateX(120%);opacity:0;}to{transform:translateX(0);opacity:1;}}
+@keyframes fadeOut{from{opacity:1;transform:translateX(0);}to{opacity:0;transform:translateX(120%);}}
+@keyframes fadeInUp{from{opacity:0;transform:translateY(16px);}to{opacity:1;transform:translateY(0);}}
+@keyframes floatUpDown{0%,100%{transform:translateY(0);}50%{transform:translateY(-8px);}}
+@keyframes shimmer{0%{background-position:-200% 0;}100%{background-position:200% 0;}}
+@keyframes gradientShift{0%{background-position:0% 50%;}50%{background-position:100% 50%;}100%{background-position:0% 50%;}}
+@keyframes fadeInOutPulse{0%,100%{opacity:0.5;}50%{opacity:1;}}
+@keyframes blinkCursor{0%,100%{border-color:var(--accent-primary);}50%{border-color:transparent;}}
+@keyframes bounceIn{0%{transform:scale(0.8);opacity:0;}60%{transform:scale(1.05);}100%{transform:scale(1);opacity:1;}}
+@keyframes waveBar{0%,100%{transform:scaleY(1);}50%{transform:scaleY(1.4);}}

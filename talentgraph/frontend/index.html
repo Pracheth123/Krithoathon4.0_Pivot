@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TalentGraph AI — Screen Smarter. Hire Faster.</title>
+  <meta name="description" content="AI-powered resume parsing with GitHub TCFE analysis, semantic skill matching, and D3 knowledge graph visualization. 100% bias-free screening powered by a 5-phase LLM pipeline." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    /* Particle canvas absolute */
+    #particle-canvas {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── NAVBAR ───────────────────────────────────────────────── -->
+<nav class="navbar" id="main-nav">
+  <a href="index.html" class="nav-logo">⬡ TalentGraph AI</a>
+  <ul class="nav-links">
+    <li><a href="#features">Features</a></li>
+    <li><a href="#how-it-works">How It Works</a></li>
+    <li><a href="#pipeline">Pipeline</a></li>
+  </ul>
+  <a href="app.html" class="btn btn-primary">Launch App →</a>
+</nav>
+
+<!-- ── HERO ─────────────────────────────────────────────────── -->
+<section class="hero-section" id="hero">
+  <div class="hero-bg"></div>
+  <canvas id="particle-canvas"></canvas>
+
+  <div class="hero-content">
+    <span class="hero-eyebrow">
+      <span class="eyebrow-dot"></span>
+      Powered by Llama 3.2 · ChromaDB · NetworkX
+    </span>
+
+    <h1 class="hero-title">
+      <span class="typewriter-container">
+        <span class="typewriter-text" id="typewriter-el">Screen Smarter.</span>
+      </span>
+      <br />
+      <span class="gradient-text">Hire Faster.</span>
+    </h1>
+
+    <p class="hero-sub">
+      AI-powered resume parsing with GitHub TCFE analysis, semantic skill matching,
+      and real-time D3.js knowledge graph visualization — 100% bias-free.
+    </p>
+
+    <div class="hero-cta">
+      <a href="app.html" class="btn btn-primary btn-lg" id="cta-launch">
+        Upload Resume →
+      </a>
+      <a href="#pipeline" class="btn btn-outline btn-lg">
+        Explore Pipeline
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ── STATS BAR ─────────────────────────────────────────────── -->
+<div class="stats-bar" id="features">
+  <div class="stat-item">
+    <div class="stat-number">100%</div>
+    <div class="stat-label">Bias-Free Screening</div>
+    <div class="stat-sub">PII auto-redacted via spaCy NLP</div>
+  </div>
+  <div class="stat-item">
+    <div class="stat-number">5-Phase</div>
+    <div class="stat-label">AI Pipeline</div>
+    <div class="stat-sub">Parse → Embed → Evaluate → Graph → Score</div>
+  </div>
+  <div class="stat-item">
+    <div class="stat-number">TCFE</div>
+    <div class="stat-label">GitHub Velocity Engine</div>
+    <div class="stat-sub">Temporal Commit Flow anti-cheat scoring</div>
+  </div>
+</div>
+
+<!-- ── PIPELINE FEATURES ─────────────────────────────────────── -->
+<section class="section" id="pipeline">
+  <div class="text-center mb-2">
+    <p class="section-label">Architecture</p>
+    <h2 class="section-heading">The 5-Phase AI Pipeline</h2>
+    <p style="color: var(--text-secondary); max-width: 580px; margin: 0 auto; font-size: 0.95rem;">
+      Every resume passes through a rigorous multi-stage evaluation process
+      before a final weighted score is produced.
+    </p>
+  </div>
+
+  <div class="pipeline-grid">
+    <div class="pipeline-card">
+      <div class="pipeline-step">Phase 01</div>
+      <span class="pipeline-icon">📄</span>
+      <div class="pipeline-title">Parse &amp; Sanitize</div>
+      <div class="pipeline-desc">PyPDF2 extracts text. spaCy NER redacts PERSON, ORG, GPE and DATE entities for blind screening.</div>
+    </div>
+
+    <div class="pipeline-card">
+      <div class="pipeline-step">Phase 02</div>
+      <span class="pipeline-icon">⚡</span>
+      <div class="pipeline-title">GitHub TCFE</div>
+      <div class="pipeline-desc">Temporal Commit Flow Engine with 3-pronged anti-cheat: rate limiting, impact filter &amp; LLM semantic scoring.</div>
+    </div>
+
+    <div class="pipeline-card">
+      <div class="pipeline-step">Phase 03</div>
+      <span class="pipeline-icon">🧠</span>
+      <div class="pipeline-title">Semantic Embedding</div>
+      <div class="pipeline-desc">HuggingFace MiniLM-L6-v2 chunks &amp; embeds the resume into ChromaDB with cosine similarity indexing.</div>
+    </div>
+
+    <div class="pipeline-card">
+      <div class="pipeline-step">Phase 04</div>
+      <span class="pipeline-icon">⚖️</span>
+      <div class="pipeline-title">LLM Evaluation</div>
+      <div class="pipeline-desc">Llama 3.2 scores candidates: Semantic (40) + PoW Depth (30) + Experience (15) + Keywords (15) = 100.</div>
+    </div>
+
+    <div class="pipeline-card">
+      <div class="pipeline-step">Phase 05</div>
+      <span class="pipeline-icon">🕸️</span>
+      <div class="pipeline-title">Knowledge Graph</div>
+      <div class="pipeline-desc">NetworkX generates a D3.js force-directed skill topology showing matches, gaps, and extra competencies.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ── HOW IT WORKS ───────────────────────────────────────────── -->
+<section class="section" id="how-it-works" style="background: linear-gradient(180deg, transparent, rgba(56,189,248,0.03), transparent);">
+  <div class="text-center mb-2">
+    <p class="section-label">Workflow</p>
+    <h2 class="section-heading">Three Steps to Insight</h2>
+  </div>
+
+  <div class="how-steps">
+    <div class="how-step">
+      <div class="how-number">1</div>
+      <div class="how-title">Upload PDF Resume</div>
+      <div class="how-desc">Drop a PDF resume. The system extracts text, auto-redacts PII, detects GitHub URLs, and fetches live TCFE commit metrics.</div>
+    </div>
+    <div class="how-step">
+      <div class="how-number">2</div>
+      <div class="how-title">Enter Job Description</div>
+      <div class="how-desc">Paste the JD. The resume is chunked into ChromaDB vectors and the LLM retrieves the most semantically relevant excerpts.</div>
+    </div>
+    <div class="how-step">
+      <div class="how-number">3</div>
+      <div class="how-title">Get AI Report</div>
+      <div class="how-desc">Receive a full report: weighted final score, XAI explanation, skill gap analysis, and an interactive D3 knowledge graph.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ── SCORING BREAKDOWN ──────────────────────────────────────── -->
+<section class="section">
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 3rem; align-items: center;" class="scoring-layout">
+    <div>
+      <p class="section-label">Scoring Model</p>
+      <h2 class="section-heading">Objective, Weighted Evaluation</h2>
+      <p style="color: var(--text-secondary); margin: 1.25rem 0 2rem; line-height: 1.7;">
+        TalentGraph AI uses a four-component scoring rubric enforced by the LLM,
+        then applies a Temporal Velocity multiplier when recent GitHub activity is detected.
+      </p>
+
+      <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1rem; background: var(--bg-glass); border: 1px solid var(--border-glass); border-radius: var(--radius-sm);">
+          <span style="font-size: 0.9rem; font-weight: 500;">🧠 Semantic Skill Match</span>
+          <span class="badge badge-blue">40 pts</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1rem; background: var(--bg-glass); border: 1px solid var(--border-glass); border-radius: var(--radius-sm);">
+          <span style="font-size: 0.9rem; font-weight: 500;">⚡ Proof-of-Work Depth</span>
+          <span class="badge badge-blue">30 pts</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1rem; background: var(--bg-glass); border: 1px solid var(--border-glass); border-radius: var(--radius-sm);">
+          <span style="font-size: 0.9rem; font-weight: 500;">📅 Experience Depth</span>
+          <span class="badge badge-blue">15 pts</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1rem; background: var(--bg-glass); border: 1px solid var(--border-glass); border-radius: var(--radius-sm);">
+          <span style="font-size: 0.9rem; font-weight: 500;">🔑 Keyword Alignment</span>
+          <span class="badge badge-blue">15 pts</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1rem; background: rgba(56,189,248,0.08); border: 1px solid var(--border-strong); border-radius: var(--radius-sm);">
+          <span style="font-size: 0.9rem; font-weight: 700; color: var(--accent-primary);">🚀 Temporal Velocity Bonus</span>
+          <span class="badge badge-green">+Burst ×10%</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="glass-card no-hover" style="text-align: center; padding: 3rem 2rem;">
+      <div style="font-size: 0.78rem; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 1rem;">Sample Score</div>
+      <svg id="demo-gauge" width="200" height="200" viewBox="0 0 200 200" style="display: block; margin: 0 auto 1.5rem;"></svg>
+      <div id="demo-score-label" style="font-family: 'Outfit'; font-size: 1.25rem; font-weight: 700; color: var(--text-primary);">83.1 / 100</div>
+      <div style="margin-top: 0.75rem;">
+        <span class="badge badge-green">⚡ Accelerated</span>
+      </div>
+      <div style="margin-top: 1.25rem; font-size: 0.8rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; text-align: left; background: var(--bg-glass); border-radius: var(--radius-sm); padding: 0.75rem;">
+        <span style="color: var(--accent-cyan);">&gt;</span>
+        Burst bonus applied: +5.6pts<br/>
+        <span style="color: var(--accent-cyan);">&gt;</span>
+        Coverage: 87.5% skill match
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── FOOTER ─────────────────────────────────────────────────── -->
+<footer>
+  <a href="index.html" class="nav-logo" style="font-size: 1.2rem;">⬡ TalentGraph AI</a>
+  <div class="footer-right">
+    <span class="hackathon-badge">🏆 Hackathon 4.0</span>
+    <span>Built with FastAPI · LangChain · D3.js</span>
+  </div>
+</footer>
+
+<script>
+// ── Navbar scroll effect ──────────────────────────────────────
+window.addEventListener('scroll', () => {
+  document.getElementById('main-nav').classList.toggle('scrolled', window.scrollY > 60);
+});
+
+// ── Typewriter ────────────────────────────────────────────────
+const phrases = ['Screen Smarter.', 'Hire Smarter.', 'Rank Objectively.', 'Eliminate Bias.'];
+let phraseIdx = 0, charIdx = 0, deleting = false;
+const el = document.getElementById('typewriter-el');
+
+function typeLoop() {
+  const current = phrases[phraseIdx];
+  if (deleting) {
+    charIdx = Math.max(0, charIdx - 1);
+    el.textContent = current.slice(0, charIdx);
+    if (charIdx === 0) {
+      deleting = false;
+      phraseIdx = (phraseIdx + 1) % phrases.length;
+      setTimeout(typeLoop, 500);
+      return;
+    }
+    setTimeout(typeLoop, 50);
+  } else {
+    charIdx = Math.min(current.length, charIdx + 1);
+    el.textContent = current.slice(0, charIdx);
+    if (charIdx === current.length) {
+      setTimeout(() => { deleting = true; typeLoop(); }, 2200);
+      return;
+    }
+    setTimeout(typeLoop, 80);
+  }
+}
+typeLoop();
+
+// ── Particle canvas ───────────────────────────────────────────
+(function () {
+  const canvas = document.getElementById('particle-canvas');
+  const ctx = canvas.getContext('2d');
+  let W, H, particles = [];
+
+  function resize() {
+    const hero = document.getElementById('hero');
+    W = canvas.width  = hero.offsetWidth;
+    H = canvas.height = hero.offsetHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  for (let i = 0; i < 60; i++) {
+    particles.push({
+      x: Math.random() * 1200,
+      y: Math.random() * 700,
+      r: Math.random() * 1.5 + 0.5,
+      dx: (Math.random() - 0.5) * 0.3,
+      dy: (Math.random() - 0.5) * 0.3,
+      alpha: Math.random() * 0.5 + 0.1
+    });
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    particles.forEach(p => {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(56,189,248,${p.alpha})`;
+      ctx.fill();
+      p.x += p.dx; p.y += p.dy;
+      if (p.x < 0 || p.x > W) p.dx *= -1;
+      if (p.y < 0 || p.y > H) p.dy *= -1;
+    });
+    // Draw lines between close particles
+    for (let i = 0; i < particles.length; i++) {
+      for (let j = i + 1; j < particles.length; j++) {
+        const dx = particles[i].x - particles[j].x;
+        const dy = particles[i].y - particles[j].y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 120) {
+          ctx.beginPath();
+          ctx.moveTo(particles[i].x, particles[i].y);
+          ctx.lineTo(particles[j].x, particles[j].y);
+          ctx.strokeStyle = `rgba(56,189,248,${0.06 * (1 - dist / 120)})`;
+          ctx.lineWidth = 0.5;
+          ctx.stroke();
+        }
+      }
+    }
+    requestAnimationFrame(draw);
+  }
+  draw();
+})();
+
+// ── Demo gauge SVG ────────────────────────────────────────────
+(function () {
+  const svg = document.getElementById('demo-gauge');
+  if (!svg) return;
+  const score = 83.1, max = 100;
+  const cx = 100, cy = 100, r = 80, strokeW = 12;
+  const circumference = 2 * Math.PI * r;
+  const pct = score / max;
+  const color = '#34d399';
+
+  svg.innerHTML = `
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="${strokeW}"/>
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}"
+      stroke-width="${strokeW}" stroke-linecap="round"
+      stroke-dasharray="${circumference}" stroke-dashoffset="${circumference * (1 - pct)}"
+      transform="rotate(-90 ${cx} ${cy})"
+      style="filter: drop-shadow(0 0 8px ${color})"/>
+    <text x="${cx}" y="${cy - 8}" text-anchor="middle" fill="#e2e8f0"
+      font-family="Outfit,sans-serif" font-size="28" font-weight="800">${score}</text>
+    <text x="${cx}" y="${cy + 16}" text-anchor="middle" fill="#475569"
+      font-family="Inter,sans-serif" font-size="12">/ 100</text>
+  `;
+})();
+
+// ── Scroll reveal ─────────────────────────────────────────────
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      e.target.style.opacity = '1';
+      e.target.style.transform = 'translateY(0)';
+    }
+  });
+}, { threshold: 0.1 });
+
+document.querySelectorAll('.pipeline-card, .how-step, .stat-item').forEach(el => {
+  el.style.opacity = '0';
+  el.style.transform = 'translateY(24px)';
+  el.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
+  observer.observe(el);
+});
+</script>
+</body>
+</html>
