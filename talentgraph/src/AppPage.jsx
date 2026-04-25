@@ -259,7 +259,8 @@ function ResultsDashboard({ data, onClose }) {
 /* ── Main AppPage ──────────────────────────────────────────── */
 export default function AppPage({ systemOnline, role, onHome, showToast }) {
   const [phase, setPhase] = useState(role ? 2 : 1);
-  const [jd, setJd] = useState(role ? role.description : '');
+  // Initialize jd from role, then localStorage, then empty
+  const [jd, setJd] = useState(role ? role.description : (localStorage.getItem('saved_jd') || ''));
   
   // Array of { id, file, status, parseData, evalData, score, errorMsg }
   const [candidates, setCandidates] = useState([]);
@@ -270,6 +271,7 @@ export default function AppPage({ systemOnline, role, onHome, showToast }) {
   /* Phase 1 — Submit JD */
   const handleJdSubmit = () => {
     if (!jd.trim()) return showToast('Please enter a Job Description.', 'error');
+    if (!role) localStorage.setItem('saved_jd', jd); // Save manual JD to localStorage
     setPhase(2);
   };
 
