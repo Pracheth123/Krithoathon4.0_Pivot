@@ -4,12 +4,18 @@ export default function StatusBar() {
   const [latency, setLatency] = React.useState(null);
   const [time, setTime]       = React.useState(new Date());
 
+  const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+
   React.useEffect(() => {
     // Ping backend for latency
     const ping = async () => {
       const t0 = Date.now();
       try {
-        await fetch('http://127.0.0.1:8000/health', { method: 'GET', signal: AbortSignal.timeout(2000) });
+        await fetch(`${API_BASE}/health`, { 
+          method: 'GET', 
+          headers: { "ngrok-skip-browser-warning": "69420" },
+          signal: AbortSignal.timeout(2000) 
+        });
         setLatency(Date.now() - t0);
       } catch {
         setLatency(null);

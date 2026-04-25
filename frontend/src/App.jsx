@@ -17,6 +17,8 @@ function App() {
   const [jobDescription, setJobDescription] = useState('');
   const [showGap, setShowGap] = useState(false);
 
+  const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+
   const evaluateSingleCandidate = async (candidate) => {
     try {
       const payload = {
@@ -25,9 +27,12 @@ function App() {
         pow_data: candidate.tcfe_metrics
       };
       
-      const res = await fetch("http://127.0.0.1:8000/evaluate-candidate", {
+      const res = await fetch(`${API_BASE}/evaluate-candidate`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "69420"
+        },
         body: JSON.stringify(payload)
       });
       
