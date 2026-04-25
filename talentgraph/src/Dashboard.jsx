@@ -14,7 +14,8 @@ export default function Dashboard({ onSelectRole, onLogout }) {
   const fetchRoles = async () => {
     try {
       const data = await getRoles();
-      setRoles(data.roles || []);
+      // The backend returns an array directly, not an object with a 'roles' key.
+      setRoles(Array.isArray(data) ? data : (data.roles || []));
     } catch (err) {
       console.error(err);
     } finally {
