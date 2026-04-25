@@ -314,38 +314,14 @@ export default function AppPage({ systemOnline, role, onHome, showToast }) {
       
       await embedStore(cand.id, pData.sanitized_text);
       
-      // --- Frontend GitHub Extraction Logic ---
-      let powData = pData.tcfe_metrics || {};
-      const match = pData.sanitized_text.match(/(?:https?:\/\/)?(?:www\.)?github\.com\s*\/\s*([a-zA-Z0-9_-]+)/i);
-      if (match && match[1]) {
-          const username = match[1];
-          console.log("Extracted GitHub Username:", username);
-          try {
-              const token = import.meta.env.VITE_GITHUB_TOKEN;
-              const headers = token ? { Authorization: `token ${token}` } : {};
-              
-              // Fetch repos to calculate stats
-              const res = await fetch(`https://api.github.com/users/${username}/repos?per_page=100`, { headers });
-              if (res.ok) {
-                  const repos = await res.json();
-                  // Calculate basic stats for the backend
-                  const totalCommits = repos.length * 10; // Mock multiplier for hackathon speed
-                  powData = {
-                      ...powData,
-                      github_user: username,
-                      repo_count: repos.length,
-                      commit_count: totalCommits, // Send to backend for Temporal Velocity math
-                      top_languages: [...new Set(repos.map(r => r.language).filter(Boolean))]
-                  };
-                  console.log("GitHub PoW Data Generated:", powData);
-              } else {
-                  console.error("GitHub API Error:", res.status);
-              }
-          } catch (error) {
-              console.error("Failed to fetch GitHub data:", error);
+      // --- Extract GitHub Username for Backend Processing ---
+      let powData = {};
+      if (pData.github_url) {
+          const match = pData.github_url.match(/(?:https?:\/\/)?(?:www\.)?github\.com\s*\/\s*([a-zA-Z0-9_-]+)/i);
+          if (match && match[1]) {
+              powData = { github_user: match[1] };
           }
       }
-      // ------------------------------------------
 
       const eData = await evaluateCandidate(cand.id, jd, powData, role?.id);
       

@@ -89,8 +89,10 @@ def embed_document(candidate_id: str, text: str, metadata: Dict[str, Any] = None
         ids=ids
     )
 
-def evaluate_candidate(candidate_id: str, job_description: str, pow_data: Dict[str, Any], role_context: str = "") -> Dict[str, Any]:
+def evaluate_candidate(candidate_id: str, job_description: str, pow_data: Dict[str, Any], role_context: str = "", pow_results: Dict[str, Any] = None) -> Dict[str, Any]:
     """
+    Evaluates a candidate using Llama 3.2. If pow_results are provided,
+    it strictly overrides the LLM's hallucinated GitHub score with the deterministic engine's math.
     Retrieves the most semantically relevant candidate chunks from ChromaDB and evaluates 
     the candidate against the Job Description using a local LLM with dynamic weighting.
     """
@@ -194,14 +196,23 @@ Return the evaluation in this exact JSON format:
                 print(f"FATAL PARSE ERROR: {e}")
                 raise ValueError(f"No JSON or Python dictionary found in LLM response: {text_content}")
                 
-        # Never Trust LLM Math: Force integer conversion safely
+        # 🚀 DETERMINISTIC MATH OVERRIDE 🚀
+        # Never trust the LLM with GitHub math. Override with our engine.
+        if pow_results and not pow_results.get("pow_data_unavailable", True):
+            # Scale the 0-100 PoW score into the 30-point bracket
+            pow_score = round(pow_results.get("pow_score", 0.0) * 0.30, 2)
+            parsed_data['pow_depth_score_30'] = pow_score
+        else:
+            # If no github URL, zero it out.
+            pow_score = 0
+            parsed_data['pow_depth_score_30'] = pow_score
+            
         sem_score = int(parsed_data.get('semantic_skill_score_40', 0))
-        pow_score = int(parsed_data.get('pow_depth_score_30', 0))
         exp_score = int(parsed_data.get('experience_score_15', 0))
         key_score = int(parsed_data.get('keyword_score_15', 0))
         
         # Python calculates the absolute truth
-        parsed_data['total_score'] = sem_score + pow_score + exp_score + key_score
+        parsed_data['total_score'] = round(sem_score + pow_score + exp_score + key_score, 2)
         
         return parsed_data
             

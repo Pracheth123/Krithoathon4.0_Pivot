@@ -232,13 +232,20 @@ async def evaluate_candidate_endpoint(request: EvaluateRequest, current_user: st
             if row:
                 role_context = f"Role Title: {row[0]}\nRole Context: {row[1]}"
 
+        # Calculate Advanced GitHub PoW math
+        pow_results = None
+        if active_pow_data.get("github_user"):
+            from pow_scoring import calculate_pow_score
+            pow_results = await calculate_pow_score(active_pow_data.get("github_user"))
+
         # 1. Run blocking LLM evaluation
         llm_evaluation = await asyncio.to_thread(
             evaluate_candidate, 
             request.candidate_id, 
             request.job_description, 
             active_pow_data,
-            role_context
+            role_context,
+            pow_results
         )
 
         print("\n=== RAW LLM OUTPUT ===")
@@ -253,26 +260,13 @@ async def evaluate_candidate_endpoint(request: EvaluateRequest, current_user: st
         graph_data = generate_knowledge_graph(candidate_skills, jd_skills)
         gap_analysis = calculate_gap_analysis(candidate_skills, jd_skills)
         
-        # Phase 5: Temporal Velocity Calculation
-        burst_detected = active_pow_data.get("burst_detected", False)
-        burst_score = active_pow_data.get("burst_score", 0.0)
-        base_total_score = llm_evaluation.get("total_score", 0.0)
+        # New PoW Pipeline directly uses the total score which includes the deterministic PoW override
+        final_weighted_score = llm_evaluation.get("total_score", 0.0)
         
-        if burst_detected:
-            multiplier = burst_score * 0.1
-            bonus = multiplier * base_total_score
-            status = "Accelerated"
-        else:
-            multiplier = 0.0
-            bonus = 0.0
-            status = "Stable"
-            
-        final_weighted_score = min(100.0, base_total_score + bonus)
-        
-        print(f"\n--- Temporal Velocity Calc for Candidate: {request.candidate_id} ---")
-        print(f"Base Score: {base_total_score} | Burst Detected: {burst_detected} | Burst Score: {burst_score}")
-        print(f"Bonus Added: {round(bonus, 2)} | Final Weighted Score: {round(final_weighted_score, 2)}\n")
-        
+        # Format the temporal velocity block for frontend display compatibility
+        burst_triggered = pow_results.get("burst_triggered", False) if pow_results else False
+        temporal_status = "Accelerated" if burst_triggered else "Stable"
+
         # 4. Build the unified JSON payload
         unified_response = {
             "candidate_id": request.candidate_id,
@@ -281,12 +275,14 @@ async def evaluate_candidate_endpoint(request: EvaluateRequest, current_user: st
                 "pow_depth_score_30": llm_evaluation.get("pow_depth_score_30"),
                 "experience_score_15": llm_evaluation.get("experience_score_15"),
                 "keyword_score_15": llm_evaluation.get("keyword_score_15"),
-                "total_score": base_total_score
+                "total_score": final_weighted_score
             },
             "temporal_velocity": {
-                "status": status,
-                "multiplier_applied": round(multiplier, 4),
-                "final_weighted_score": round(final_weighted_score, 2)
+                "status": temporal_status,
+                "multiplier_applied": pow_results.get("velocity_component", 0) if pow_results else 0.0,
+                "final_weighted_score": round(final_weighted_score, 2),
+                "burst_flag": burst_triggered,
+                "raw_pow_score_100": pow_results.get("pow_score", 0) if pow_results else 0.0
             },
             "explanation": llm_evaluation.get("xai_explanation"),
             "gap_analysis": gap_analysis,
