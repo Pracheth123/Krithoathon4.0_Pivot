@@ -16,7 +16,10 @@ function getHeaders(extraHeaders = {}) {
 }
 
 export async function healthCheck() {
-  const res = await fetch(`${API_BASE_URL}/health`, { signal: AbortSignal.timeout(4000) });
+  const res = await fetch(`${API_BASE_URL}/health`, { 
+    headers: getHeaders(),
+    signal: AbortSignal.timeout(4000) 
+  });
   if (!res.ok) throw new Error('offline');
   return res.json();
 }
@@ -24,7 +27,7 @@ export async function healthCheck() {
 export async function loginUser(email, password) {
   const res = await fetch(`${API_BASE_URL}/login`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ email, password })
   });
   if (!res.ok) {
@@ -37,7 +40,7 @@ export async function loginUser(email, password) {
 export async function registerUser(email, password) {
   const res = await fetch(`${API_BASE_URL}/register`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ email, password })
   });
   if (!res.ok) {
