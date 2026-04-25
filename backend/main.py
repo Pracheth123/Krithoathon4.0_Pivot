@@ -81,12 +81,114 @@ def extract_text_from_docx(file_content: bytes) -> str:
     except Exception as e:
         raise ValueError(f"Failed to extract text from DOCX: {str(e)}")
 
-def extract_github_url(text: str) -> Optional[str]:
-    """Extracts the first GitHub profile URL found in the text."""
-    match = re.search(r'(?:https?://)?(?:www\.)?github\.com/[a-zA-Z0-9_-]+', text, re.IGNORECASE)
-    if match:
-        return match.group(0)
+def extract_github_from_docx_hyperlinks(file_content: bytes) -> Optional[str]:
+    """
+    Strategy 3: Scans embedded hyperlink relationships inside a DOCX file.
+    These are stored in document.xml.rels, NOT as visible text, so regex on
+    extracted text will never find them.
+    """
+    try:
+        doc = docx.Document(io.BytesIO(file_content))
+        # Iterate all relationships in the document part
+        for rel in doc.part.rels.values():
+            target = rel.target_ref or ""
+            if "github.com" in target.lower():
+                # Extract username from the URL
+                match = re.search(r'github\.com/([a-zA-Z0-9_-]+)', target, re.IGNORECASE)
+                if match:
+                    username = match.group(1)
+                    # Filter out known non-profile paths
+                    if username.lower() not in {"orgs", "explore", "topics", "trending", "login"}:
+                        return f"https://github.com/{username}"
+    except Exception:
+        pass
     return None
+
+def extract_github_from_pdf_annotations(file_content: bytes) -> Optional[str]:
+    """
+    Strategy 4: Scans PDF page annotations (clickable hyperlinks) for a GitHub URL.
+    PyPDF2 can read /URI entries from annotation dictionaries even when the
+    link text is just a word like 'GitHub' with no visible URL.
+    """
+    try:
+        pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_content))
+        for page in pdf_reader.pages:
+            if "/Annots" not in page:
+                continue
+            annotations = page["/Annots"]
+            if annotations is None:
+                continue
+            for annot in annotations:
+                obj = annot.get_object() if hasattr(annot, 'get_object') else annot
+                if obj.get("/Subtype") == "/Link":
+                    action = obj.get("/A")
+                    if action and action.get("/URI"):
+                        uri = str(action["/URI"])
+                        if "github.com" in uri.lower():
+                            match = re.search(r'github\.com/([a-zA-Z0-9_-]+)', uri, re.IGNORECASE)
+                            if match:
+                                username = match.group(1)
+                                if username.lower() not in {"orgs", "explore", "topics", "trending", "login"}:
+                                    return f"https://github.com/{username}"
+    except Exception:
+        pass
+    return None
+
+
+def extract_github_url(text: str, file_content: bytes = None, file_type: str = None) -> Optional[str]:
+    """
+    4-strategy GitHub profile extraction chain.
+    Strategy 1: Full URL in plain text  (e.g. https://github.com/torvalds)
+    Strategy 2: Labeled username in plain text (e.g. 'GitHub: torvalds' or '@torvalds')
+    Strategy 3: Embedded DOCX hyperlink in document relationships
+    Strategy 4: PDF annotation /URI hyperlink object
+    Returns a normalized https://github.com/<username> URL or None.
+    """
+    # --- Strategy 1: Full or partial URL in extracted text ---
+    match = re.search(r'(?:https?://)?(?:www\.)?github\.com/([a-zA-Z0-9_-]+)', text, re.IGNORECASE)
+    if match:
+        username = match.group(1)
+        if username.lower() not in {"orgs", "explore", "topics", "trending", "login"}:
+            return f"https://github.com/{username}"
+
+    # --- Strategy 2: Labeled username patterns ---
+    # Forward:  "GitHub: torvalds", "GitHub - torvalds", "GitHub | torvalds", "GitHub @torvalds"
+    labeled = re.search(
+        r'github\s*[:\-|@\s]+\s*@?([a-zA-Z0-9_-]{1,39})(?:\s|$|,|\|)',
+        text,
+        re.IGNORECASE
+    )
+    if labeled:
+        username = labeled.group(1).strip()
+        if username.lower() not in {"com", "profile", "orgs", "explore"}:
+            return f"https://github.com/{username}"
+
+    # Reverse: "@torvalds (GitHub)", "@torvalds - GitHub", "torvalds | GitHub"
+    reverse = re.search(
+        r'@?([a-zA-Z0-9_-]{1,39})\s*[\(\-\|,]?\s*github',
+        text,
+        re.IGNORECASE
+    )
+    if reverse:
+        username = reverse.group(1).strip()
+        if username.lower() not in {"com", "profile", "orgs", "explore", "on", "via", "at"}:
+            return f"https://github.com/{username}"
+
+
+    # --- Strategy 3: DOCX embedded hyperlinks ---
+    if file_content and file_type == "docx":
+        result = extract_github_from_docx_hyperlinks(file_content)
+        if result:
+            return result
+
+    # --- Strategy 4: PDF annotation hyperlinks ---
+    if file_content and file_type == "pdf":
+        result = extract_github_from_pdf_annotations(file_content)
+        if result:
+            return result
+
+    return None
+
 
 def redact_entities(text: str) -> str:
     """Uses spaCy to detect and redact Person Names and Organizations for blind screening."""
@@ -193,8 +295,11 @@ async def parse_resume(file: UploadFile = File(...), current_user: str = Depends
         }
     
     # 4. Proceed with GitHub extraction for technical roles
-    # Extract from raw_text to ensure the LLM didn't accidentally remove the URL
-    github_url = extract_github_url(raw_text)
+    # Extract from raw_text to ensure the LLM didn't accidentally remove the URL.
+    # Also pass raw bytes + file type to scan embedded hyperlinks (DOCX rels / PDF annotations).
+    file_type = "pdf" if filename_lower.endswith(".pdf") else "docx"
+    github_url = extract_github_url(raw_text, file_content=content, file_type=file_type)
+
     
     tcfe_metrics = None
     if github_url:
