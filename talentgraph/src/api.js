@@ -87,7 +87,8 @@ export async function evaluateCandidate(candidateId, jobDescription, powData, ro
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || `HTTP ${res.status}`);
+    const errMsg = typeof err.detail === 'object' ? JSON.stringify(err.detail) : err.detail;
+    throw new Error(errMsg || `HTTP ${res.status}`);
   }
   return res.json();
 }

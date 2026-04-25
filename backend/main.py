@@ -21,6 +21,9 @@ app = FastAPI(title="TalentGraph AI - Resume Parser API")
 
 app.include_router(auth_router)
 
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+
 # --- 🚨 CORS MIDDLEWARE FIX (For Frontend Integration) ---
 app.add_middleware(
     CORSMiddleware,
@@ -29,6 +32,15 @@ app.add_middleware(
     allow_methods=["*"], 
     allow_headers=["*"], 
 )
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    print(f"OMG 422 ERROR: {exc}")
+    print(f"BODY WAS: {await request.body()}")
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors(), "body": str(exc)},
+    )
 
 # --- HEALTH CHECK (For React Status Bar) ---
 @app.get("/health")
