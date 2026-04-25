@@ -25,7 +25,7 @@ export default function App() {
     <>
       <ToastContainer toasts={toasts} />
       {page === 'landing'
-        ? <LandingPage onLaunch={() => setPage('app')} />
+        ? <LandingPage onLaunch={() => setPage('app')} showToast={showToast} />
         : <AppPage systemOnline={systemOnline} onHome={() => setPage('landing')} showToast={showToast} />}
     </>
   );

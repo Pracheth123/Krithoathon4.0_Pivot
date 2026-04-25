@@ -1,6 +1,6 @@
 import io
 import re
-from fastapi import FastAPI, UploadFile, File, HTTPException, Query
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
@@ -11,8 +11,11 @@ from tcfe_engine import calculate_tcfe
 from langchain_engine import embed_document, evaluate_candidate
 from graph_engine import generate_knowledge_graph, calculate_gap_analysis
 import asyncio
+from auth import auth_router, get_current_user
 
 app = FastAPI(title="TalentGraph AI - Resume Parser API")
+
+app.include_router(auth_router)
 
 # --- 🚨 CORS MIDDLEWARE FIX (For Frontend Integration) ---
 app.add_middleware(
@@ -80,7 +83,7 @@ def redact_entities(text: str) -> str:
     return redacted_text
 
 @app.post("/parse-resume")
-async def parse_resume(file: UploadFile = File(...)):
+async def parse_resume(file: UploadFile = File(...), current_user: str = Depends(get_current_user)):
     """
     Phase 1 & 2: Parses PDF, redacts PII, checks for technical relevance, 
     and extracts live GitHub metrics (TCFE).
@@ -120,9 +123,12 @@ async def parse_resume(file: UploadFile = File(...)):
     tcfe_metrics = None
     if github_url:
         try:
-            username = github_url.split("github.com/")[-1].strip("/")
+            # Safely get the username from the raw URL
+            username = github_url.rstrip('/').split('/')[-1]
             if username:
-                extractor = GitHubExtractor()
+                print(f"Fetching GitHub API for user: {username}")
+                github_token = os.getenv("GITHUB_TOKEN")
+                extractor = GitHubExtractor(token=github_token)
                 top_repos = await extractor.get_top_repositories(username, limit=1)
                 
                 if top_repos:
@@ -158,7 +164,7 @@ class EvaluateRequest(BaseModel):
     pow_data: Optional[Dict[str, Any]] = None
 
 @app.post("/embed-store")
-async def embed_store(request: EmbedStoreRequest):
+async def embed_store(request: EmbedStoreRequest, current_user: str = Depends(get_current_user)):
     """Chunks and embeds the sanitized resume into ChromaDB."""
     try:
         await asyncio.to_thread(embed_document, request.candidate_id, request.sanitized_text, request.metadata or {})
@@ -167,7 +173,7 @@ async def embed_store(request: EmbedStoreRequest):
         raise HTTPException(status_code=500, detail=f"Error embedding document: {str(e)}")
 
 @app.post("/evaluate-candidate")
-async def evaluate_candidate_endpoint(request: EvaluateRequest):
+async def evaluate_candidate_endpoint(request: EvaluateRequest, current_user: str = Depends(get_current_user)):
     """
     The Mega-Endpoint: Queries ChromaDB, runs Llama 3.2, applies TCFE momentum math, 
     and generates the D3 topology graph in one payload.
@@ -184,6 +190,10 @@ async def evaluate_candidate_endpoint(request: EvaluateRequest):
             request.job_description, 
             active_pow_data
         )
+
+        print("\n=== RAW LLM OUTPUT ===")
+        print(llm_evaluation)
+        print("======================\n")
         
         # 2. Extract skills
         candidate_skills = llm_evaluation.get("extracted_candidate_skills", [])

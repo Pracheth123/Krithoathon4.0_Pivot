@@ -1,5 +1,7 @@
 import os
 import json
+import re
+import ast
 import logging
 from typing import List, Dict, Any, Optional
 from langchain_ollama import ChatOllama
@@ -92,33 +94,48 @@ def evaluate_candidate(candidate_id: str, job_description: str, pow_data: Dict[s
     Retrieves the most semantically relevant candidate chunks from ChromaDB and evaluates 
     the candidate against the Job Description using a local LLM.
     """
-    # 1. Embed the Job Description
-    jd_embedding = embeddings_model.embed_query(job_description)
-    
-    # 2. Similarity Search in ChromaDB (Filtered by Candidate ID)
-    results = collection.query(
-        query_embeddings=[jd_embedding],
-        n_results=5,
+    # 1. Fetch all chunks for the candidate from ChromaDB
+    results = collection.get(
         where={"candidate_id": candidate_id},
         include=["documents"]
     )
     
-    if not results["documents"] or not results["documents"][0]:
+    if not results["documents"]:
         raise ValueError(f"No documents found for candidate ID {candidate_id}")
         
-    retrieved_chunks = results["documents"][0]
+    # 2. Join all chunks into a single string for full context
+    retrieved_chunks = results["documents"]
     resume_context = "\n\n---\n\n".join(retrieved_chunks)
     
     # 3. Initialize local LLM for RTX 4050 (Llama 3.2 3B)
     llm = ChatOllama(
         model="llama3.2",
+        base_url="http://127.0.0.1:11434",
         temperature=0.0,
         format="json"  # Forces Ollama to strictly output JSON
     )
     
+    # Dynamic Rubric Logic
+    if pow_data:
+        scoring_rubric = """
+        Use the Technical Scoring Rubric:
+        - semantic_skill_score_40 (Max 40): Evaluate deep technical overlap.
+        - pow_depth_score_30 (Max 30): Evaluate based on provided Proof of Work/GitHub data.
+        - experience_score_15 (Max 15): Alignment of projects/roles with the JD.
+        - keyword_score_15 (Max 15): Exact tech stack matches.
+        """
+    else:
+        scoring_rubric = """
+        Use the Non-Technical/Business Scoring Rubric:
+        - semantic_skill_score_40 (Max 50): Evaluate core competencies and soft/hard skill overlap.
+        - experience_score_15 (Max 35): Heavily weigh their track record, achievements, and past roles.
+        - keyword_score_15 (Max 15): Exact industry terminology matches.
+        - pow_depth_score_30 (Max 0): ALWAYS output 0. Do not penalize the candidate; this metric is not applicable.
+        """
+
     # 4. Define Aggressive Prompt for the Small Local Model
     prompt = PromptTemplate(
-        template="""You are an AI Assessor. NEVER echo or repeat the Job Description. You MUST output ONLY a valid JSON object matching the requested schema. Evaluate the candidate purely on semantic business/operational skills if `pow_data` is empty. DO NOT leave any fields blank.
+        template="""You are an AI Assessor. NEVER echo or repeat the Job Description. CRITICAL: You must output ONLY a raw, valid JSON object. Do not use markdown code blocks (```json). Do not include any conversational text before or after the JSON. Evaluate the candidate purely on semantic business/operational skills if `pow_data` is empty. DO NOT leave any fields blank.
 
 JOB DESCRIPTION:
 {job_description}
@@ -130,34 +147,68 @@ RELEVANT RESUME EXCERPTS:
 {resume_context}
 
 SCORING RULES (You MUST assign a number > 0 for matching skills):
-1. semantic_skill_score_40: Score up to 40 based on how well the resume matches the exact skills in the job description.
-2. pow_depth_score_30: Score up to 30 based on the GitHub Proof-of-Work data provided.
-3. experience_score_15: Score up to 15 based on their years of experience and project complexity.
-4. keyword_score_15: Score up to 15 based on keyword matches.
+{scoring_rubric}
 5. total_score: Sum of the above 4 scores.
 6. xai_explanation: You MUST write a 2-sentence explanation of why you gave these scores. DO NOT LEAVE BLANK. CRITICAL: If the provided `pow_data` is empty or null, the candidate is a non-technical applicant. You MUST NOT mention GitHub, commit history, burst scores, or proof-of-work in the XAI explanation. Base your evaluation purely on the semantic overlap between the resume and the job description. If `pow_data` is present, mention the candidate's recent commit activity or 'burst' status in the xai_explanation if relevant to their current skill momentum.
 7. extracted_candidate_skills: Extract a list of STRICT technical hard skills (e.g., Python, AWS, React) from the candidate's resume. Do NOT include generic buzzwords (e.g., "Leadership", "Agile").
 8. extracted_jd_skills: Extract a list of STRICT technical hard skills from the job description. Do NOT include generic buzzwords.
 
 Return the evaluation in this exact JSON format:
-{format_instructions}
+{{
+  "semantic_skill_score_40": "<integer between 0 and 40>",
+  "pow_depth_score_30": "<integer between 0 and 30>",
+  "experience_score_15": "<integer between 0 and 15>",
+  "keyword_score_15": "<integer between 0 and 15>",
+  "total_score": "<integer sum of the above>",
+  "xai_explanation": "<A highly concise, natural-language Explainable AI summary>",
+  "extracted_candidate_skills": ["<skill1>", "<skill2>"],
+  "extracted_jd_skills": ["<skill1>", "<skill2>"]
+}}
 """,
-        input_variables=["job_description", "pow_data", "resume_context"],
-        partial_variables={"format_instructions": JsonOutputParser(pydantic_object=EvaluationPayload).get_format_instructions()}
+        input_variables=["job_description", "pow_data", "resume_context", "scoring_rubric"]
     )
     
-    chain = prompt | llm | JsonOutputParser(pydantic_object=EvaluationPayload)
+    chain = prompt | llm
     
     # 5. Score Candidate using LLM
     try:
-        response = chain.invoke({
+        raw_response = chain.invoke({
             "job_description": job_description,
             "pow_data": json.dumps(pow_data),
-            "resume_context": resume_context
+            "resume_context": resume_context,
+            "scoring_rubric": scoring_rubric
         })
-        return response
+        
+        # Smart Parsing (The Regex Fix)
+        text_content = raw_response.content if hasattr(raw_response, 'content') else str(raw_response)
+        match = re.search(r'\{.*\}', text_content, re.DOTALL)
+        dict_string = match.group(0) if match else text_content
+        
+        try:
+            # Try standard JSON first
+            parsed_data = json.loads(dict_string)
+        except json.JSONDecodeError:
+            try:
+                # Hackathon Cheat Code: Safely evaluate Python-style dictionary strings (handles single quotes)
+                parsed_data = ast.literal_eval(dict_string)
+            except Exception as e:
+                print(f"FATAL PARSE ERROR: {e}")
+                raise ValueError(f"No JSON or Python dictionary found in LLM response: {text_content}")
+                
+        # Never Trust LLM Math: Force integer conversion safely
+        sem_score = int(parsed_data.get('semantic_skill_score_40', 0))
+        pow_score = int(parsed_data.get('pow_depth_score_30', 0))
+        exp_score = int(parsed_data.get('experience_score_15', 0))
+        key_score = int(parsed_data.get('keyword_score_15', 0))
+        
+        # Python calculates the absolute truth
+        parsed_data['total_score'] = sem_score + pow_score + exp_score + key_score
+        
+        return parsed_data
+            
     except Exception as e:
         logger.error(f"Error evaluating candidate {candidate_id}: {e}")
+        print(f"WARNING: LLM output failed to parse as JSON. Using fallback. Error: {e}")
         return {
             "semantic_skill_score_40": 20.0,
             "pow_depth_score_30": 0.0,
@@ -180,6 +231,7 @@ def evaluate_commit_semantics(commit_messages: List[str]) -> float:
         
     llm = ChatOllama(
         model="llama3.2",
+        base_url="http://127.0.0.1:11434",
         temperature=0.0,
         format="json"
     )

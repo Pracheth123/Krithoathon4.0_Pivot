@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { loginUser, registerUser, setToken } from './api';
 
 /* ── HireLens Logo — Magnifying Glass with Spark ────────────── */
 function HireLensLogo({ size = 36 }) {
@@ -206,11 +207,37 @@ function DashboardMockup() {
   );
 }
 
-/* ── Main Landing Page ──────────────────────────────────────── */
-export default function LandingPage({ onLaunch }) {
+export default function LandingPage({ onLaunch, showToast }) {
   const [scrolled, setScrolled]   = useState(false);
   const [email, setEmail]         = useState('');
   const [activeTab, setActiveTab] = useState(0);
+  
+  // Auth Modal State
+  const [authModal, setAuthModal] = useState(null); // 'login', 'register', or null
+  const [authForm, setAuthForm]   = useState({ username: '', password: '' });
+  const [authLoading, setAuthLoading] = useState(false);
+
+  const handleAuth = async (e) => {
+    e.preventDefault();
+    if (!authForm.username || !authForm.password) return showToast('Please enter credentials.', 'error');
+    setAuthLoading(true);
+    try {
+      if (authModal === 'login') {
+        const data = await loginUser(authForm.username, authForm.password);
+        setToken(data.access_token);
+        showToast('Login successful!', 'success');
+        onLaunch();
+      } else {
+        await registerUser(authForm.username, authForm.password);
+        showToast('Registration successful! Please log in.', 'success');
+        setAuthModal('login');
+      }
+    } catch (e) {
+      showToast(`Auth error: ${e.message}`, 'error');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
 
   useEffect(() => {
     const h = () => setScrolled(window.scrollY > 50);
@@ -230,14 +257,11 @@ export default function LandingPage({ onLaunch }) {
           <span className="logo-wordmark">Hire<span className="logo-accent">Lens</span></span>
         </span>
         <ul className="nav-links">
-          <li><a href="#assessments">Assessments</a></li>
-          <li><a href="#pipeline">Interviews</a></li>
-          <li><a href="#how-it-works">Upskilling</a></li>
-          <li><a href="#pricing">Pricing</a></li>
+          {/* Removed links for UX cleanup */}
         </ul>
         <div className="nav-right">
-          <button className="btn btn-ghost btn-sm" onClick={onLaunch}>Login</button>
-          <button className="btn btn-free-trial" onClick={onLaunch}>Free Trial</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setAuthModal('login')}>Login</button>
+          <button className="btn btn-free-trial" onClick={() => setAuthModal('register')}>Sign Up</button>
         </div>
       </nav>
 
@@ -268,14 +292,14 @@ export default function LandingPage({ onLaunch }) {
               value={email}
               onChange={e => setEmail(e.target.value)}
             />
-            <button className="btn btn-free-trial hero-cta-btn" onClick={onLaunch}>
+            <button className="btn btn-free-trial hero-cta-btn" onClick={() => setAuthModal('register')}>
               Start Free Trial
             </button>
           </div>
           <p className="hero-cta-sub">No credit card required · Free forever for up to 5 candidates</p>
 
           <div className="hero-cta-alt">
-            <button className="btn btn-outline" onClick={onLaunch}>Upload Resume →</button>
+            <button className="btn btn-outline" onClick={() => setAuthModal('login')}>Upload Resume →</button>
             <a href="#pipeline" className="btn btn-ghost">See the Pipeline</a>
           </div>
         </div>
@@ -427,7 +451,7 @@ export default function LandingPage({ onLaunch }) {
         <p style={{ color:'#92400E', marginBottom:'2.5rem', fontSize:'1rem' }}>
           No setup required. Just a PDF and a job description.
         </p>
-        <button className="btn btn-free-trial btn-lg" onClick={onLaunch}
+        <button className="btn btn-free-trial btn-lg" onClick={() => setAuthModal('register')}
           style={{ fontSize:'1rem', padding:'1rem 2.5rem', borderRadius:'var(--radius-sm)' }}>
           Launch HireLens Free →
         </button>
@@ -451,6 +475,44 @@ export default function LandingPage({ onLaunch }) {
           <span>Built with FastAPI · LangChain · D3.js · React</span>
         </div>
       </footer>
+
+      {/* ── Auth Modal ──────────────────────────────────────────── */}
+      {authModal && (
+        <div className="modal-backdrop" onClick={() => setAuthModal(null)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:9999, display:'flex', alignItems:'center', justifyContent:'center', padding:'1rem' }}>
+          <div className="glass-card" onClick={e => e.stopPropagation()} style={{ width:'100%', maxWidth:400, background:'#fff', padding:'2rem', position:'relative' }}>
+            <button className="btn btn-ghost btn-sm" onClick={() => setAuthModal(null)} style={{ position:'absolute', top:'1rem', right:'1rem' }}>✕</button>
+            <h2 style={{ fontFamily:'Outfit', fontSize:'1.5rem', fontWeight:800, marginBottom:'0.5rem' }}>
+              {authModal === 'login' ? 'Welcome Back' : 'Create Account'}
+            </h2>
+            <p style={{ color:'var(--text-secondary)', fontSize:'0.9rem', marginBottom:'1.5rem' }}>
+              {authModal === 'login' ? 'Sign in to evaluate candidates.' : 'Register to start your free trial.'}
+            </p>
+            
+            <form onSubmit={handleAuth} style={{ display:'flex', flexDirection:'column', gap:'1rem' }}>
+              <div>
+                <label style={{ display:'block', fontSize:'0.8rem', fontWeight:600, marginBottom:'0.25rem', color:'var(--text-secondary)' }}>Username</label>
+                <input type="text" className="form-textarea" style={{ height:'40px', minHeight:'40px', padding:'0 0.75rem', overflow:'hidden', resize:'none' }}
+                  value={authForm.username} onChange={e => setAuthForm({...authForm, username: e.target.value})} />
+              </div>
+              <div>
+                <label style={{ display:'block', fontSize:'0.8rem', fontWeight:600, marginBottom:'0.25rem', color:'var(--text-secondary)' }}>Password</label>
+                <input type="password" className="form-textarea" style={{ height:'40px', minHeight:'40px', padding:'0 0.75rem', overflow:'hidden', resize:'none' }}
+                  value={authForm.password} onChange={e => setAuthForm({...authForm, password: e.target.value})} />
+              </div>
+              <button type="submit" className="btn btn-primary" disabled={authLoading} style={{ marginTop:'0.5rem' }}>
+                {authLoading ? <span className="spinner"/> : (authModal === 'login' ? 'Sign In' : 'Sign Up')}
+              </button>
+            </form>
+            
+            <div style={{ marginTop:'1.5rem', textAlign:'center', fontSize:'0.85rem', color:'var(--text-secondary)' }}>
+              {authModal === 'login' ? "Don't have an account? " : "Already have an account? "}
+              <button className="btn btn-ghost btn-sm" style={{ display:'inline', padding:0, color:'var(--accent-primary)' }} onClick={() => setAuthModal(authModal === 'login' ? 'register' : 'login')}>
+                {authModal === 'login' ? 'Sign up' : 'Sign in'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
