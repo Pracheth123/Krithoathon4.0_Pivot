@@ -133,9 +133,7 @@ def extract_github_from_pdf_annotations(file_content: bytes) -> Optional[str]:
     except Exception:
         pass
     return None
-
-
-def extract_github_url(text: str, file_content: bytes = None, file_type: str = None) -> Optional[str]:
+def extract_github_url(text: str, file_content: bytes = None, file_type: str = None) -> Optional[str]:
     """
     4-strategy GitHub profile extraction chain.
     Strategy 1: Full URL in plain text  (e.g. https://github.com/torvalds)
@@ -144,36 +142,92 @@ def extract_github_url(text: str, file_content: bytes = None, file_type: str = N
     Strategy 4: PDF annotation /URI hyperlink object
     Returns a normalized https://github.com/<username> URL or None.
     """
+
+    # Comprehensive blocklist: GitHub reserved paths + common English words + resume section headers
+    # that could be falsely matched by the heuristic strategies.
+    BLOCKLIST = {
+        # GitHub reserved paths
+        "orgs", "explore", "topics", "trending", "login", "marketplace", "about",
+        "contact", "home", "search", "pulls", "issues", "notifications", "dashboard",
+        # Common resume section headers
+        "professional", "experience", "summary", "objective", "education", "skills",
+        "projects", "references", "profile", "portfolio", "website", "email", "phone",
+        "address", "certification", "certifications", "awards", "publications",
+        "languages", "achievements", "interests", "activities", "volunteer",
+        "work", "employment", "background", "overview", "expertise", "technical",
+        "personal", "details", "information", "contact", "social", "links",
+        # Common English false-positives
+        "com", "the", "and", "for", "with", "from", "your", "via", "on", "at",
+        "my", "our", "its", "all", "new", "use", "see", "get", "set", "api",
+        "view", "find", "open", "free", "live", "main", "home", "page", "site",
+    }
+
+    def is_valid_candidate(username: str) -> bool:
+        """Returns True if the username is not in the blocklist and looks like a real handle."""
+        u = username.lower().strip()
+        if u in BLOCKLIST:
+            return False
+        # GitHub usernames are 1-39 chars, alphanumeric + hyphens, no consecutive hyphens
+        if len(u) < 1 or len(u) > 39:
+            return False
+        if u.startswith('-') or u.endswith('-') or '--' in u:
+            return False
+        # Must have at least one alphanumeric char
+        if not any(c.isalnum() for c in u):
+            return False
+        return True
+
+    def validate_via_github_api(username: str) -> Optional[str]:
+        """Pings the GitHub API to confirm the user exists. Returns normalized URL or None."""
+        import httpx as _httpx
+        github_token = os.getenv("GITHUB_PAT", os.getenv("GITHUB_TOKEN", ""))
+        hdrs = {"Accept": "application/vnd.github.v3+json"}
+        if github_token:
+            hdrs["Authorization"] = f"Bearer {github_token}"
+        try:
+            res = _httpx.get(f"https://api.github.com/users/{username}", headers=hdrs, timeout=5.0)
+            if res.status_code == 200:
+                return f"https://github.com/{username}"
+        except Exception:
+            pass
+        return None
+
     # --- Strategy 1: Full or partial URL in extracted text ---
-    match = re.search(r'(?:https?://)?(?:www\.)?github\.com/([a-zA-Z0-9_-]+)', text, re.IGNORECASE)
+    # This is unambiguous — no API validation needed.
+    match = re.search(r'(?:https?://)?(?:www\.)?github\.com/([a-zA-Z0-9][a-zA-Z0-9_-]{0,38})', text, re.IGNORECASE)
     if match:
         username = match.group(1)
-        if username.lower() not in {"orgs", "explore", "topics", "trending", "login"}:
+        if is_valid_candidate(username):
             return f"https://github.com/{username}"
 
     # --- Strategy 2: Labeled username patterns ---
+    # These are heuristic and need API validation to avoid false positives like "PROFESSIONAL".
+
     # Forward:  "GitHub: torvalds", "GitHub - torvalds", "GitHub | torvalds", "GitHub @torvalds"
     labeled = re.search(
-        r'github\s*[:\-|@\s]+\s*@?([a-zA-Z0-9_-]{1,39})(?:\s|$|,|\|)',
+        r'github\s*[:\-|@\s]+\s*@?([a-zA-Z0-9][a-zA-Z0-9_-]{0,38})(?:\s|$|,|\|)',
         text,
         re.IGNORECASE
     )
     if labeled:
         username = labeled.group(1).strip()
-        if username.lower() not in {"com", "profile", "orgs", "explore"}:
-            return f"https://github.com/{username}"
+        if is_valid_candidate(username):
+            validated = validate_via_github_api(username)
+            if validated:
+                return validated
 
     # Reverse: "@torvalds (GitHub)", "@torvalds - GitHub", "torvalds | GitHub"
     reverse = re.search(
-        r'@?([a-zA-Z0-9_-]{1,39})\s*[\(\-\|,]?\s*github',
+        r'@([a-zA-Z0-9][a-zA-Z0-9_-]{0,38})\s*[\(\-\|,]?\s*github',
         text,
         re.IGNORECASE
     )
     if reverse:
         username = reverse.group(1).strip()
-        if username.lower() not in {"com", "profile", "orgs", "explore", "on", "via", "at"}:
-            return f"https://github.com/{username}"
-
+        if is_valid_candidate(username):
+            validated = validate_via_github_api(username)
+            if validated:
+                return validated
 
     # --- Strategy 3: DOCX embedded hyperlinks ---
     if file_content and file_type == "docx":
@@ -281,9 +335,11 @@ async def parse_resume(file: UploadFile = File(...), current_user: str = Depends
     # 2. Redact entities FIRST (Blind Screening) via LLM Bias Sterilization
     sanitized_text = await llm_sterilize_resume(raw_text)
     
-    # 3. Relevance Gating check
-    tech_keywords = ["engineer", "developer", "software", "data", "code", "tech"]
-    text_lower = sanitized_text.lower()
+    # 3. Relevance Gating check — use raw_text so sterilization doesn't cause false negatives
+    tech_keywords = ["engineer", "developer", "software", "data", "code", "tech",
+                     "programmer", "analyst", "devops", "cloud", "ml", "ai", "python",
+                     "java", "javascript", "react", "backend", "frontend", "fullstack"]
+    text_lower = raw_text.lower()
     is_technical = any(kw in text_lower for kw in tech_keywords)
     
     if not is_technical:
@@ -381,9 +437,13 @@ async def evaluate_candidate_endpoint(request: EvaluateRequest, current_user: st
         # Run PoW scoring and ChromaDB vector evaluation CONCURRENTLY for max speed
         pow_results = None
         pow_task = None
-        if active_pow_data.get("github_user"):
+        github_user = active_pow_data.get("github_user")
+        print(f"\n[PoW DEBUG] github_user from request: '{github_user}'")
+        print(f"[PoW DEBUG] full pow_data received: {active_pow_data}")
+
+        if github_user:
             from pow_scoring import calculate_pow_score
-            pow_task = calculate_pow_score(active_pow_data.get("github_user"), request.job_description)
+            pow_task = calculate_pow_score(github_user, request.job_description)
 
         if pow_task:
             # Run GitHub PoW + LLM evaluation simultaneously
@@ -398,6 +458,7 @@ async def evaluate_candidate_endpoint(request: EvaluateRequest, current_user: st
                 )
             )
             # Override PoW score with actual result now that it's computed
+            print(f"[PoW DEBUG] pow_results returned: {pow_results}")
             if pow_results and not pow_results.get("pow_data_unavailable", True):
                 pow_score = round(pow_results.get("pow_score", 0.0) * 0.30, 2)
                 llm_evaluation["pow_depth_score_30"] = pow_score
