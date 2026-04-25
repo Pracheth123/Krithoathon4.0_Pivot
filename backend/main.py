@@ -195,7 +195,7 @@ class EmbedStoreRequest(BaseModel):
 
 class EvaluateRequest(BaseModel):
     candidate_id: str
-    job_description: str
+    job_description: str = ""
     pow_data: Optional[Dict[str, Any]] = None
     role_id: Optional[int] = None
 
