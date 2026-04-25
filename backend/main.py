@@ -108,6 +108,47 @@ def redact_entities(text: str) -> str:
         
     return redacted_text
 
+async def llm_sterilize_resume(raw_text: str) -> str:
+    """
+    Uses Llama 3.2 to rewrite the resume and eliminate proxy bias.
+    Falls back to spaCy-based redact_entities on failure or timeout.
+    """
+    prompt = f"""You are a Bias Sterilization Engine for a strict meritocratic hiring platform. 
+Your objective is to rewrite the provided resume achievements to eliminate all explicit and implicit "Proxy Bias."
+
+RULES:
+1. REMOVE all names of individuals, companies, universities, fraternities/sororities, non-profits, and geographic locations.
+2. REPLACE them with generic functional equivalents (e.g., change "Stanford University" to "[Tier 1 Academic Institution]", change "Google" to "[Enterprise Tech Company]", change "Women in Tech" to "[Diversity Organization]").
+3. REMOVE all dates, graduation years, and lengths of tenure to prevent ageism.
+4. PRESERVE 100% of the technical context, frameworks, code deployment metrics, and business impact. 
+5. OUTPUT ONLY THE STERILIZED RESUME TEXT. DO NOT OUTPUT ANY CONVERSATIONAL TEXT, NOTES, OR INTRODUCTIONS.
+
+Input Text: {raw_text}
+Sterilized Output:"""
+
+    url = "http://localhost:11434/api/generate"
+    payload = {
+        "model": "llama3.2",
+        "prompt": prompt,
+        "stream": False
+    }
+    
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            res = await client.post(url, json=payload)
+            if res.status_code == 200:
+                data = res.json()
+                response_text = data.get("response", "").strip()
+                if response_text:
+                    return response_text
+    except Exception as e:
+        print(f"LLM Sterilization Error: {e}. Falling back to spaCy.")
+    
+    # Fallback to legacy spaCy engine
+    return redact_entities(raw_text)
+
+
 @app.post("/parse-resume")
 async def parse_resume(file: UploadFile = File(...), current_user: str = Depends(get_current_user)):
     """
@@ -135,8 +176,8 @@ async def parse_resume(file: UploadFile = File(...), current_user: str = Depends
     if not raw_text.strip():
         raise HTTPException(status_code=400, detail="Could not extract any text from the document.")
     
-    # 2. Redact entities FIRST (Blind Screening)
-    sanitized_text = redact_entities(raw_text)
+    # 2. Redact entities FIRST (Blind Screening) via LLM Bias Sterilization
+    sanitized_text = await llm_sterilize_resume(raw_text)
     
     # 3. Relevance Gating check
     tech_keywords = ["engineer", "developer", "software", "data", "code", "tech"]
@@ -152,7 +193,8 @@ async def parse_resume(file: UploadFile = File(...), current_user: str = Depends
         }
     
     # 4. Proceed with GitHub extraction for technical roles
-    github_url = extract_github_url(sanitized_text)
+    # Extract from raw_text to ensure the LLM didn't accidentally remove the URL
+    github_url = extract_github_url(raw_text)
     
     tcfe_metrics = None
     if github_url:
